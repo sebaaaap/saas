@@ -68,6 +68,34 @@ def startup_event():
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             print("Database connected successfully!")
+            
+            # Auto-seed Admin (TEMPORAL)
+            from app.database import SessionLocal
+            from app.models.base import User, UserRole
+            from app.core.security import get_password_hash
+            import uuid
+            
+            db = SessionLocal()
+            try:
+                existing = db.query(User).filter(User.username == "admin").first()
+                if not existing:
+                    admin = User(
+                        id=uuid.uuid4(),
+                        username="admin",
+                        hashed_password=get_password_hash("admin123"),
+                        role=UserRole.admin,
+                        is_active=True,
+                        full_name="Administrador",
+                    )
+                    db.add(admin)
+                    db.commit()
+                    print("Auto-seeded admin user successfully.")
+            except Exception as e:
+                print(f"Error seeding admin: {e}")
+                db.rollback()
+            finally:
+                db.close()
+                
             break
         except Exception as e:
             retries -= 1
