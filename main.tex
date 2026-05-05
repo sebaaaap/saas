@@ -1,0 +1,114 @@
+\documentclass[10pt,a4paper]{article}
+
+% -------------------- PAQUETES --------------------
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage[export]{adjustbox} 
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{colortbl}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{setspace}
+\usepackage{ragged2e}
+
+% -------------------- COLORES --------------------
+\definecolor{linecolor}{RGB}{90,110,110}
+\definecolor{lightgray}{RGB}{230,235,235}
+
+% -------------------- ESTILO GENERAL --------------------
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.4}
+
+% -------------------- DOCUMENTO --------------------
+\begin{document}
+
+% -------------------- ENCABEZADO --------------------
+\noindent
+\begin{minipage}[t]{0.5\textwidth}
+    \vspace{0pt} 
+    \textbf{VANKAI}\\
+    \textsc{Kryptonita Vulcaniza}\\[0.3cm]
+    Av. Central 1234, Santiago, Chile\\
+    +56 9 1234 5678\\
+    contacto@vankai.cl\\
+    www.vankai.cl
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.45\textwidth}
+    \vspace*{-0.5cm} 
+    
+    \raggedleft
+    \includegraphics[height=2cm, valign=t]{fblogo3.png} 
+    
+    \vspace{0.6cm} 
+    
+    \renewcommand{\arraystretch}{1.2} 
+    \begin{tabularx}{\linewidth}{|X|}
+    \hline
+    \rowcolor{lightgray}
+    \textbf{CLIENTE} \\ \hline
+    Vicente Antonio Barrilla Rodríguez\\
+    DUI: 01369245-0\\
+    Placa de moto: M 671454\\
+    Modelo: boxerbm150x \\ \hline
+    \end{tabularx}
+\end{minipage}
+
+\vspace{0.8cm}
+
+% -------------------- FECHA / VALIDEZ / N° COTIZACIÓN --------------------
+\rowcolors{1}{lightgray}{white}
+\begin{tabularx}{\textwidth}{|X|X|X|}
+\hline
+\textbf{Fecha del presupuesto} & \textbf{Validez} & \textbf{Nº de Cotización} \\ \hline
+02/03/2026 & 15 días & COT-2026-001 \\ \hline
+\end{tabularx}
+
+\vspace{0.4cm}
+
+% -------------------- TABLA PRINCIPAL --------------------
+\rowcolors{2}{lightgray}{white}
+% Se ajustó a 5 columnas: X (flexible), y 4 centradas (c)
+\begin{tabularx}{\textwidth}{|X|c|c|c|c|}
+\hline
+\textbf{DESCRIPCIÓN} & \textbf{UNIDADES} & \textbf{PRECIO} & \textbf{IVA (19\%)} & \textbf{TOTAL} \\ \hline
+Bolígrafo Rojo     & 50 & \$ 1.000  & \$ 9.500  & \$ 59.500  \\
+Caja Papel DIN A4  & 21 & \$ 18.000 & \$ 71.820 & \$ 449.820 \\
+Lápiz              & 50 & \$ 1.000  & \$ 9.500  & \$ 59.500  \\
+Silla de oficina   & 5  & \$ 80.000 & \$ 76.000 & \$ 476.000 \\
+Calendario 2021    & 10 & \$ 1.500  & \$ 2.850  & \$ 17.850  \\
+\hline
+% El número 5 indica que esta celda vacía abarca las 5 columnas ahora
+\multicolumn{5}{|c|}{\rule{0pt}{2.5cm}} \\ \hline 
+\end{tabularx}
+
+\vspace{0.4cm}
+
+% -------------------- TOTALES --------------------
+\begin{tabularx}{\textwidth}{X r}
+    &
+    \begin{tabular}{|l|r|}
+    \hline
+    SUB-TOTAL NETO & \$ 893.000 \\ \hline
+    DESCUENTO & \$ 35.000 \\ \hline
+    IVA 19\%  & \$ 163.020 \\ \hline
+    \rowcolor{lightgray}
+    \textbf{TOTAL PRESUPUESTADO} & \textbf{\$ 1.021.020} \\ \hline
+    \end{tabular}
+\end{tabularx}
+    
+\vspace{1.2cm}
+
+% -------------------- FIRMAS --------------------
+\begin{tabularx}{\textwidth}{X X}
+\centering Firma & \centering Firma del cliente
+\end{tabularx}
+
+\vspace{2cm}
+
+\hrule
+\vspace{1pt}
+\hrule
+
+\end{document}

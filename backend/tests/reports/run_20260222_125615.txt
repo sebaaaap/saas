@@ -1,0 +1,127 @@
+============================= test session starts ==============================
+collecting ... collected 29 items / 1 error
+
+==================================== ERRORS ====================================
+__________________ ERROR collecting tests/test_inventario.py ___________________
+ImportError while importing test module '/Users/sebastian/Desktop/prototipos/post_full_v1/backend/tests/test_inventario.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+.venv/lib/python3.9/site-packages/_pytest/python.py:498: in importtestmodule
+    mod = import_path(
+.venv/lib/python3.9/site-packages/_pytest/pathlib.py:587: in import_path
+    importlib.import_module(module_name)
+/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/__init__.py:127: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+<frozen importlib._bootstrap>:1030: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1007: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:986: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:680: in _load_unlocked
+    ???
+.venv/lib/python3.9/site-packages/_pytest/assertion/rewrite.py:186: in exec_module
+    exec(co, module.__dict__)
+tests/test_inventario.py:12: in <module>
+    from app.schemas.inventory import InventoryMovementCreate, MovementItemCreate
+E   ImportError: cannot import name 'MovementItemCreate' from 'app.schemas.inventory' (/Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/inventory.py)
+=============================== warnings summary ===============================
+.venv/lib/python3.9/site-packages/starlette/formparsers.py:12
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/.venv/lib/python3.9/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+app/schemas/pos.py:38
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:38: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ProductResponse(ProductBase):
+
+app/schemas/pos.py:53
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:53: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PaymentResponse(PaymentCreate):
+
+app/schemas/pos.py:68
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:68: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SaleItemResponse(BaseModel):
+
+app/schemas/pos.py:85
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:85: PydanticDeprecatedSince20: `min_items` is deprecated and will be removed, use `min_length` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    items: List[SaleItemCreate] = Field(min_items=1, description="Debe haber al menos 1 item")
+
+app/schemas/pos.py:86
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:86: PydanticDeprecatedSince20: `min_items` is deprecated and will be removed, use `min_length` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    payments: List[PaymentCreate] = Field(min_items=1, description="Debe haber al menos 1 pago")
+
+app/schemas/pos.py:89
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:89: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    @validator('payments')
+
+app/schemas/pos.py:100
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:100: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SaleResponse(BaseModel):
+
+app/schemas/pos.py:134
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/pos.py:134: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class RefundResponse(BaseModel):
+
+app/schemas/auth.py:30
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/auth.py:30: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class UserResponse(UserBase):
+
+app/schemas/inventory.py:16
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/inventory.py:16: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class InventoryMovementItemDetail(BaseModel):
+
+app/schemas/inventory.py:25
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/inventory.py:25: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class InventoryMovementResponse(BaseModel):
+
+app/schemas/purchases.py:10
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/purchases.py:10: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PurchaseItemResponse(BaseModel):
+
+app/schemas/purchases.py:31
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/purchases.py:31: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class PurchaseResponse(BaseModel):
+
+app/schemas/sessions.py:20
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/sessions.py:20: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CashSessionResponse(BaseModel):
+
+app/schemas/locations.py:23
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/locations.py:23: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LocationResponse(LocationBase):
+
+app/schemas/locations.py:46
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/locations.py:46: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ProductResponseWithLocation(ProductBase):
+
+app/schemas/suppliers.py:14
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/suppliers.py:14: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class SupplierResponse(SupplierBase):
+
+app/schemas/categories.py:12
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/categories.py:12: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CategoryResponse(CategoryBase):
+
+app/schemas/customers.py:35
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/customers.py:35: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class VehicleResponse(VehicleBase):
+
+app/schemas/customers.py:59
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/customers.py:59: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CustomerResponse(CustomerBase):
+
+app/schemas/customers.py:66
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/app/schemas/customers.py:66: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class CustomerSalesHistory(BaseModel):
+
+.venv/lib/python3.9/site-packages/_pytest/config/__init__.py:1474
+  /Users/sebastian/Desktop/prototipos/post_full_v1/backend/.venv/lib/python3.9/site-packages/_pytest/config/__init__.py:1474: PytestConfigWarning: Unknown config option: env
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- Generated html report: file:///Users/sebastian/Desktop/prototipos/post_full_v1/backend/tests/reports/report_20260222_125615.html -
+=========================== short test summary info ============================
+ERROR tests/test_inventario.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+======================== 23 warnings, 1 error in 0.21s =========================

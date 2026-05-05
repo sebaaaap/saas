@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "pos-backend"
+version = "0.1.0"
+description = "Backend híbrido para sistema POS (Local + Web)"
+authors = ["Admin <admin@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.1"
+pydantic = {extras = ["email"], version = "^2.6.0"}
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-multipart = "^0.0.9"
+# Drivers de Base de Datos
+psycopg2-binary = "^2.9.9" # Para modo Online
+aiosqlite = "^0.19.0"      # Para modo Offline
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
