@@ -7,7 +7,8 @@ from app.models.base import Product, StorageLocation
 from app.schemas.locations import ProductResponseWithLocation
 from pydantic import BaseModel
 from typing import List, Optional
-from app.api.deps import check_roles
+from app.api.deps import check_roles, get_tenant_session
+from app.db.tenant_session import TenantSession
 
 router = APIRouter()
 
@@ -44,7 +45,7 @@ def upload_product_image(
 @router.post("/import")
 async def import_products(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
@@ -89,7 +90,7 @@ async def import_products(
                 parts = [p.strip() for p in category_name.split("/")]
                 parent_id = None
                 for part in parts:
-                    cat_obj = db.query(ProductCategory).filter(
+                    cat_obj = db.tenant_query(ProductCategory).filter(
                         ProductCategory.name.ilike(part),
                         ProductCategory.parent_id == parent_id
                     ).first()
@@ -109,8 +110,7 @@ async def import_products(
                 parent_id = None
                 for part in parts:
                     current_path = f"{current_path}/{part}" if current_path else part
-                    # Buscar por path exacto para evitar colisiones
-                    loc_obj = db.query(StorageLocation).filter(
+                    loc_obj = db.tenant_query(StorageLocation).filter(
                         StorageLocation.path == current_path,
                         StorageLocation.branch_id == branch_id
                     ).first()
@@ -131,7 +131,7 @@ async def import_products(
                  prod_type = ProductType.SERVICE
                 
             # 4. BUSCAR/CREAR PRODUCTO
-            product = db.query(Product).filter(
+            product = db.tenant_query(Product).filter(
                 Product.barcode == barcode,
                 Product.branch_id == branch_id,
                 Product.is_active == True
@@ -199,12 +199,11 @@ async def import_products(
 @router.post("/", response_model=ProductResponseWithLocation)
 def create_product(
     product: ProductCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
-    # 1. Validar que no exista ya un producto activo con el mismo código de barras en la misma sucursal
-    query = db.query(Product).filter(
+    query = db.tenant_query(Product).filter(
         Product.barcode == product.barcode,
         Product.is_active == True
     )
@@ -221,14 +220,14 @@ def create_product(
 
     # 2. Validar location si viene
     if product.location_id:
-        loc = db.query(StorageLocation).filter(StorageLocation.id == product.location_id).first()
+        loc = db.tenant_query(StorageLocation).filter(
+            StorageLocation.id == product.location_id
+        ).first()
         if not loc:
             raise HTTPException(status_code=400, detail="Ubicación no válida")
         
-        # Verificar si la ubicación está ocupada (Considerando la nueva flag)
         if not loc.allows_multiple_products:
-            # Si es estricta, buscamos si hay CUALQUIER otro producto con barcode distinto
-            occupant = db.query(Product).filter(
+            occupant = db.tenant_query(Product).filter(
                 Product.location_id == product.location_id,
                 Product.barcode != product.barcode,
                 Product.is_active == True,
@@ -284,15 +283,15 @@ class ProductAggregatedResponse(BaseModel):
 @router.get("/", response_model=List[ProductAggregatedResponse])
 def list_products(
     q: Optional[str] = None,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario", "vendedor"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     """
     Lista productos agrupados por código de barras con stock total y detalle de ubicaciones.
+    Solo muestra productos del tenant (empresa) del usuario logueado.
     """
-    # Solo listamos productos activos
-    query = db.query(Product).filter(Product.is_active == True)
+    query = db.tenant_query(Product).filter(Product.is_active == True)
     if branch_id:
         query = query.filter(Product.branch_id == branch_id)
     
@@ -370,7 +369,7 @@ def list_products(
 def update_product(
     product_id: UUID, 
     product_data: ProductCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
     """
@@ -378,12 +377,12 @@ def update_product(
     Si hay múltiples ubicaciones (mismo barcode), sincroniza los campos comunes (precio, nombre, etc.)
     La ubicación y stock se actualizan solo para el ID específico si se proporcionan.
     """
-    db_product = db.query(Product).filter(Product.id == product_id).first()
+    db_product = db.tenant_query(Product).filter(Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
     # Obtener todos los productos con el mismo barcode en la misma sucursal para mantener coherencia
-    siblings = db.query(Product).filter(
+    siblings = db.tenant_query(Product).filter(
         Product.barcode == db_product.barcode,
         Product.branch_id == db_product.branch_id
     ).all()
@@ -408,16 +407,16 @@ def update_product(
         # Nota: El modal actual manda todo, así que update_data tendrá location_id y stock.
         # Asumimos que si se edita desde el modal, se está editando la instancia "principal" o seleccionada.
         if 'location_id' in update_data:
-             # Validar ubicación
-             loc = db.query(StorageLocation).filter(StorageLocation.id == update_data['location_id']).first()
+             loc = db.tenant_query(StorageLocation).filter(
+                 StorageLocation.id == update_data['location_id']
+             ).first()
              if not loc:
                  raise HTTPException(status_code=400, detail="Ubicación no válida")
              
-             # VALIDACIÓN: Si es una ubicación de SKU Único, no permitir si ya hay OTRO producto ocupándola
              if not loc.allows_multiple_products:
-                 occupant = db.query(Product).filter(
+                 occupant = db.tenant_query(Product).filter(
                      Product.location_id == loc.id,
-                     Product.barcode != db_product.barcode,  # Diferente SKU
+                     Product.barcode != db_product.barcode,
                      Product.is_active == True,
                      Product.stock_quantity > 0
                  ).first()
@@ -443,19 +442,18 @@ def update_product(
 @router.delete("/{product_id}")
 def delete_product(
     product_id: UUID, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
     """
     Realiza un borrado lógico (is_active=False) del producto y sus ubicaciones.
     Esto permite mantener el historial de ventas y movimientos sin errores de integridad.
     """
-    db_product = db.query(Product).filter(Product.id == product_id).first()
+    db_product = db.tenant_query(Product).filter(Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
-    # Encontrar todos los productos con el mismo barcode dentro de la misma sucursal
-    siblings = db.query(Product).filter(
+    siblings = db.tenant_query(Product).filter(
         Product.barcode == db_product.barcode,
         Product.branch_id == db_product.branch_id
     ).all()

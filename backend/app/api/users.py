@@ -2,46 +2,49 @@ from uuid import UUID
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_tenant_session
 from app.database import get_db_session
 from app.models.base import User, UserRole
 from app.schemas.auth import UserCreate, UserUpdate, UserResponse
 from app.core import security
+from app.db.tenant_session import TenantSession
 
 router = APIRouter()
 
 @router.get("/", response_model=List[UserResponse])
 def get_users(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return db.query(User).all()
+    # tenant_query filtra automáticamente por company_id del usuario logueado
+    return db.tenant_query(User).all()
 
 @router.post("/", response_model=UserResponse)
 def create_user(
     *,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     user_in: UserCreate,
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    user = db.query(User).filter(User.username == user_in.username).first()
+    # Verificar username único SOLO dentro de la misma company
+    user = db.tenant_query(User).filter(User.username == user_in.username).first()
     if user:
         raise HTTPException(
             status_code=400,
-            detail="The user with this username already exists in the system.",
+            detail="El nombre de usuario ya existe.",
         )
     
     if user_in.email:
-        user_email = db.query(User).filter(User.email == user_in.email).first()
+        user_email = db.tenant_query(User).filter(User.email == user_in.email).first()
         if user_email:
             raise HTTPException(
                 status_code=400,
-                detail="The user with this email already exists in the system.",
+                detail="El correo ya está registrado.",
             )
 
     db_obj = User(
@@ -53,8 +56,9 @@ def create_user(
         role=user_in.role,
         is_active=user_in.is_active,
         branch_id=user_in.branch_id,
+        # company_id se estampa automáticamente por tenant_add()
     )
-    db.add(db_obj)
+    db.add(db_obj)  # usa tenant_add internamente → auto company_id
     db.commit()
     db.refresh(db_obj)
     return db_obj
@@ -62,7 +66,7 @@ def create_user(
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     *,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     user_id: UUID,
     user_in: UserUpdate,
     current_user: User = Depends(get_current_user)
@@ -70,9 +74,10 @@ def update_user(
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    db_obj = db.query(User).filter(User.id == user_id).first()
+    # Solo puede editar usuarios de su propia empresa
+    db_obj = db.tenant_query(User).filter(User.id == user_id).first()
     if not db_obj:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     update_data = user_in.dict(exclude_unset=True)
     if "password" in update_data:
@@ -91,19 +96,20 @@ def update_user(
 @router.delete("/{user_id}", response_model=UserResponse)
 def delete_user(
     *,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     user_id: UUID,
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    user = db.query(User).filter(User.id == user_id).first()
+    # Solo puede eliminar usuarios de su propia empresa
+    user = db.tenant_query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
     if user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot delete current user")
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
 
     db.delete(user)
     db.commit()

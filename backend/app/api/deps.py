@@ -9,6 +9,7 @@ from app.core import security
 from app.database import get_db_session
 from app.models.base import User, UserRole, CashSession
 from app.schemas.auth import TokenData
+from app.db.tenant_session import TenantSession
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 
@@ -42,6 +43,19 @@ def get_current_user(
     current_company_id.set(user.company_id)
         
     return user
+
+
+def get_tenant_session(
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> TenantSession:
+    """
+    Returns a TenantSession scoped to the current user's company.
+    All queries via tenant_query() and adds via tenant_add() / add()
+    are automatically isolated to current_user.company_id.
+    """
+    return TenantSession(db=db, company_id=current_user.company_id)
+
 
 def check_roles(allowed_roles: List[str]):
     def role_checker(current_user: User = Depends(get_current_user)):
