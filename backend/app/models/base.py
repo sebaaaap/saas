@@ -16,7 +16,26 @@ class BaseModel(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-class Branch(BaseModel):
+class Company(BaseModel):
+    __tablename__ = "companies"
+    
+    name = Column(String, index=True, nullable=False)
+    business_name = Column(String, nullable=True)
+    tax_id = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    subscription_plan = Column(String, default="free")
+
+class TenantModel(BaseModel):
+    __abstract__ = True
+    
+    @sqlalchemy_orm.declared_attr
+    def company_id(cls):
+        return Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True, index=True)
+
+
+class Branch(TenantModel):
     __tablename__ = "branches"
     
     name = Column(String, index=True, nullable=False)
@@ -35,7 +54,7 @@ class Branch(BaseModel):
     work_orders = relationship("WorkOrder", back_populates="branch")
     quotes = relationship("Quote", back_populates="branch")
 
-class UserBranchAccess(BaseModel):
+class UserBranchAccess(TenantModel):
     __tablename__ = "user_branch_access"
     
     user_id = Column(String, index=True, nullable=False)
@@ -95,7 +114,7 @@ class PaymentMethod(enum.Enum):
     MIXED = "mixto"
     INTERNAL_CREDIT = "credito_interno" # Nuevo por defecto
 
-class PaymentMethodConfig(BaseModel):
+class PaymentMethodConfig(TenantModel):
     __tablename__ = "payment_method_configs"
     
     name = Column(String, nullable=False, unique=True, index=True) # "Efectivo", "Tarjeta", "Crédito Interno"
@@ -110,7 +129,7 @@ class RefundReason(enum.Enum):
     CUSTOMER_ERROR = "error_cliente"
     SYSTEM_ERROR = "error_sistema"
 
-class StorageLocation(BaseModel):
+class StorageLocation(TenantModel):
     __tablename__ = "storage_locations"
 
     name = Column(String, nullable=False)
@@ -128,7 +147,7 @@ class StorageLocation(BaseModel):
     products = relationship("Product", back_populates="location")
     branch = relationship("Branch", back_populates="storage_locations")
 
-class ProductCategory(BaseModel):
+class ProductCategory(TenantModel):
     __tablename__ = "product_categories"
     
     name = Column(String, unique=True, nullable=False)
@@ -137,7 +156,7 @@ class ProductCategory(BaseModel):
     
     products = relationship("Product", back_populates="category_rel")
 
-class Product(BaseModel):
+class Product(TenantModel):
     __tablename__ = "products"
 
     name = Column(String, index=True, nullable=False)
@@ -171,7 +190,7 @@ class Product(BaseModel):
     sale_items = relationship("SaleItem", back_populates="product")
     purchase_items = relationship("PurchaseItem", back_populates="product")
 
-class CashRegister(BaseModel):
+class CashRegister(TenantModel):
     __tablename__ = "cash_registers"
     name = Column(String, nullable=False, unique=True)
     description = Column(String, nullable=True)
@@ -181,7 +200,7 @@ class CashRegister(BaseModel):
     sessions = relationship("CashSession", back_populates="cash_register")
     branch = relationship("Branch", back_populates="cash_registers")
 
-class CashSession(BaseModel):
+class CashSession(TenantModel):
     __tablename__ = "cash_sessions"
     
     user_id = Column(String, nullable=False) # ID del usuario (vendedor)
@@ -215,7 +234,7 @@ class VehicleType(enum.Enum):
     camioneta = "camioneta"
     otro = "otro"
 
-class Customer(BaseModel):
+class Customer(TenantModel):
     __tablename__ = "customers"
     
     name = Column(String, index=True, nullable=False)
@@ -227,7 +246,7 @@ class Customer(BaseModel):
     vehicles = relationship("Vehicle", back_populates="owner", cascade="all, delete-orphan")
     tickets = relationship("Ticket", back_populates="customer")
 
-class Vehicle(BaseModel):
+class Vehicle(TenantModel):
     __tablename__ = "vehicles"
     
     license_plate = Column(String, unique=True, index=True, nullable=False)
@@ -243,7 +262,7 @@ class Vehicle(BaseModel):
     owner = relationship("Customer", back_populates="vehicles")
     tickets = relationship("Ticket", back_populates="vehicle")
 
-class Ticket(BaseModel):
+class Ticket(TenantModel):
     __tablename__ = "tickets"
     
     ticket_number = Column(String, unique=True, index=True, nullable=False)
@@ -285,7 +304,7 @@ class Ticket(BaseModel):
     items = relationship("SaleItem", back_populates="ticket", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="ticket", cascade="all, delete-orphan")
 
-class SaleItem(BaseModel):
+class SaleItem(TenantModel):
     __tablename__ = "sale_items"
     
     ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
@@ -305,7 +324,7 @@ class SaleItem(BaseModel):
     def price(self):
         return self.unit_price
 
-class Payment(BaseModel):
+class Payment(TenantModel):
     __tablename__ = "payments"
     
     ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
@@ -318,7 +337,7 @@ class Payment(BaseModel):
     
     ticket = relationship("Ticket", back_populates="payments")
 
-class Supplier(BaseModel):
+class Supplier(TenantModel):
     __tablename__ = "suppliers"
     
     name = Column(String, index=True, nullable=False)
@@ -329,7 +348,7 @@ class Supplier(BaseModel):
     
     purchases = relationship("Purchase", back_populates="supplier")
 
-class Purchase(BaseModel):
+class Purchase(TenantModel):
     __tablename__ = "purchases"
     
     date_created = Column(DateTime(timezone=True), default=func.now())
@@ -349,7 +368,7 @@ class Purchase(BaseModel):
     notes = Column(String, nullable=True)
     items = relationship("PurchaseItem", back_populates="purchase")
 
-class PurchaseItem(BaseModel):
+class PurchaseItem(TenantModel):
     __tablename__ = "purchase_items"
     
     purchase_id = Column(UUID(as_uuid=True), ForeignKey("purchases.id"))
@@ -360,7 +379,7 @@ class PurchaseItem(BaseModel):
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product", back_populates="purchase_items")
 
-class InventoryMovement(BaseModel):
+class InventoryMovement(TenantModel):
     __tablename__ = "inventory_movements"
     
     date = Column(DateTime(timezone=True), default=func.now(), nullable=False)
@@ -374,7 +393,7 @@ class InventoryMovement(BaseModel):
     
     items = relationship("InventoryMovementItem", back_populates="movement", cascade="all, delete-orphan")
 
-class InventoryMovementItem(BaseModel):
+class InventoryMovementItem(TenantModel):
     __tablename__ = "inventory_movement_items"
     
     movement_id = Column(UUID(as_uuid=True), ForeignKey("inventory_movements.id"), nullable=False)
@@ -396,7 +415,7 @@ class UserRole(enum.Enum):
     vendedor = "vendedor"
     inventario = "inventario"
 
-class User(BaseModel):
+class User(TenantModel):
     __tablename__ = "users"
     
     username = Column(String, unique=True, index=True, nullable=False)
@@ -408,7 +427,7 @@ class User(BaseModel):
     is_active = Column(Boolean, default=True)
     branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True)  # Sucursal asignada (vendedor)
 
-class Quote(BaseModel):
+class Quote(TenantModel):
     __tablename__ = "quotes"
     
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
@@ -426,7 +445,7 @@ class Quote(BaseModel):
     items = relationship("QuoteItem", back_populates="quote", cascade="all, delete-orphan")
     work_order = relationship("WorkOrder", back_populates="quote", uselist=False)
 
-class QuoteItem(BaseModel):
+class QuoteItem(TenantModel):
     __tablename__ = "quote_items"
     
     quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=False)
@@ -450,7 +469,7 @@ class QuoteItem(BaseModel):
             return "PRODUCTO"
         return "SERVICIO" if self.product.product_type == ProductType.SERVICE else "PRODUCTO"
 
-class WorkOrder(BaseModel):
+class WorkOrder(TenantModel):
     __tablename__ = "work_orders"
     
     quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True)
@@ -519,7 +538,7 @@ class WorkOrder(BaseModel):
         done_count = sum(1 for i in self.items if i.done)
         return (Decimal(done_count) / Decimal(len(self.items))) * Decimal("100.0")
 
-class WorkOrderItem(BaseModel):
+class WorkOrderItem(TenantModel):
     __tablename__ = "work_order_items"
     
     work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id"), nullable=False)
@@ -546,7 +565,7 @@ class WorkOrderItem(BaseModel):
             return "PRODUCTO"
         return "SERVICIO" if self.product.product_type == ProductType.SERVICE else "PRODUCTO"
 
-class WorkOrderPayment(BaseModel):
+class WorkOrderPayment(TenantModel):
     __tablename__ = "work_order_payments"
     
     work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id"), nullable=False)
@@ -560,7 +579,7 @@ class WorkOrderPayment(BaseModel):
 
 # ── Expenses (Modo Compra PDV) ─────────────────────────────────────────────
 
-class ExpenseCategory(BaseModel):
+class ExpenseCategory(TenantModel):
     __tablename__ = "expense_categories"
 
     name = Column(String, nullable=False, index=True)
@@ -571,7 +590,7 @@ class ExpenseCategory(BaseModel):
     expenses = relationship("Expense", back_populates="category")
 
 
-class Expense(BaseModel):
+class Expense(TenantModel):
     __tablename__ = "expenses"
 
     category_id = Column(UUID(as_uuid=True), ForeignKey("expense_categories.id"), nullable=False)

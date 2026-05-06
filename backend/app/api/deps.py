@@ -37,6 +37,10 @@ def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
         
+    # Set the global multi-tenant context for all subsequent DB operations
+    from app.database import current_company_id
+    current_company_id.set(user.company_id)
+        
     return user
 
 def check_roles(allowed_roles: List[str]):
