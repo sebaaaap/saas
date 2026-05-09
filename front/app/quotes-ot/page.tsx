@@ -36,13 +36,14 @@ export default function QuotesOtPage() {
                                 <Clock size={14} />
                                 Cotizaciones
                             </TabsTrigger>
-                            <TabsTrigger
+                            {/* OT_HIDDEN: Pestaña Oculta Temporalmente */}
+                            {/* <TabsTrigger
                                 value="ots"
                                 className="flex items-center gap-2 px-6 py-2 rounded-lg text-xs font-semibold data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
                             >
                                 <Wrench size={14} />
                                 Órdenes de Trabajo
-                            </TabsTrigger>
+                            </TabsTrigger> */}
                         </TabsList>
                     </Tabs>
 
@@ -54,9 +55,10 @@ export default function QuotesOtPage() {
                         <TabsContent value="quotes" className="m-0 h-full border-none p-0">
                             <QuotesOtManager type="quote" />
                         </TabsContent>
-                        <TabsContent value="ots" className="m-0 h-full border-none p-0">
+                        {/* OT_HIDDEN: Contenido de OT Oculto Temporalmente */}
+                        {/* <TabsContent value="ots" className="m-0 h-full border-none p-0">
                             <QuotesOtManager type="ot" />
-                        </TabsContent>
+                        </TabsContent> */}
                     </Tabs>
                 </main>
             </div>

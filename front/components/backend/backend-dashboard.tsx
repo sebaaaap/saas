@@ -11,6 +11,8 @@ import {
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { BranchSelector } from "@/components/shared/BranchSelector"
+import { useSettings } from "@/hooks/useSettings"
+import { useRouter } from "next/navigation"
 
 export type ModuleId = "pdv" | "compras" | "inventario" | "ajustes" | "reportes" | "clientes" | "taller"
 
@@ -52,10 +54,10 @@ const workshopConfig = [
   {
     id: "taller" as ModuleId,
     name: "Taller Automotriz",
-    description: "Cotizaciones y Órdenes de Trabajo (OT)",
+    description: "Gestión de cotizaciones para servicios y repuestos",
     icon: Wrench,
     color: "bg-blue-600",
-    roles: ["admin"],  // Solo admin — vendedor no accede al taller
+    roles: ["admin"],
   }
 ]
 
@@ -67,6 +69,8 @@ const quickLinksConfig = [
 
 export function BackendDashboard({ onNavigate }: BackendDashboardProps) {
   const { user, logout, isAdmin } = useAuth();
+  const { settings } = useSettings();
+  const router = useRouter();
 
   const filteredModules = modulesConfig.filter(m => user && m.roles.includes(user.role));
   const filteredQuickLinks = quickLinksConfig.filter(l => user && l.roles.includes(user.role));
@@ -77,9 +81,17 @@ export function BackendDashboard({ onNavigate }: BackendDashboardProps) {
       {/* Top Bar */}
       <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Wrench className="h-5 w-5 text-primary-foreground" />
-          </div>
+          {settings.logoBase64 ? (
+            <img 
+              src={settings.logoBase64} 
+              alt="Logo" 
+              className="h-9 w-9 object-contain rounded-lg"
+            />
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
+              <Wrench className="h-5 w-5 text-primary-foreground" />
+            </div>
+          )}
           <div>
             <h1 className="text-sm font-bold text-foreground leading-none">AutoTaller Pro</h1>
             <p className="text-[11px] text-muted-foreground">Sistema de Gestion - Talleres Mecanicos</p>

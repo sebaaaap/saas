@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from enum import Enum
 
 class UserRole(str, Enum):
+    superadmin = "superadmin"
     admin = "admin"
     vendedor = "vendedor"
     inventario = "inventario"

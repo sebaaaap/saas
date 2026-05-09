@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Boolean, Enum, Text, Numeric, JSON
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Boolean, Enum, Text, Numeric, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
@@ -26,6 +26,7 @@ class Company(BaseModel):
     phone = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     subscription_plan = Column(String, default="free")
+    logo_url = Column(String, nullable=True)
 
 class TenantModel(BaseModel):
     __abstract__ = True
@@ -117,11 +118,15 @@ class PaymentMethod(enum.Enum):
 class PaymentMethodConfig(TenantModel):
     __tablename__ = "payment_method_configs"
     
-    name = Column(String, nullable=False, unique=True, index=True) # "Efectivo", "Tarjeta", "Crédito Interno"
-    key = Column(String, nullable=False, unique=True) # "efectivo", "tarjeta", "credito_interno"
+    name = Column(String, nullable=False, index=True) # "Efectivo", "Tarjeta", "Crédito Interno"
+    key = Column(String, nullable=False) # "efectivo", "tarjeta", "credito_interno"
     icon = Column(String, nullable=True, default="Wallet") # Icono Lucide
     is_active = Column(Boolean, default=True)
     description = Column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('company_id', 'key', name='uix_payment_method_company_key'),
+    )
 
 class RefundReason(enum.Enum):
     RETURN_TO_STOCK = "devolucion_stock"
@@ -192,7 +197,7 @@ class Product(TenantModel):
 
 class CashRegister(TenantModel):
     __tablename__ = "cash_registers"
-    name = Column(String, nullable=False, unique=True)
+    name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True)
@@ -411,6 +416,7 @@ class InventoryMovementItem(TenantModel):
         return self.product.name if self.product else "N/A"
 
 class UserRole(enum.Enum):
+    superadmin = "superadmin"  # Platform owner — cross-tenant access
     admin = "admin"
     vendedor = "vendedor"
     inventario = "inventario"

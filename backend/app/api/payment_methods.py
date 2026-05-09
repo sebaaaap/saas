@@ -5,8 +5,9 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from app.database import get_db_session
+from app.db.tenant_session import TenantSession
 from app.models.base import PaymentMethodConfig
-from app.api.deps import check_roles
+from app.api.deps import check_roles, get_tenant_session
 
 router = APIRouter()
 
@@ -34,10 +35,10 @@ class PaymentMethodConfigResponse(BaseModel):
 
 @router.get("/", response_model=List[PaymentMethodConfigResponse])
 def get_payment_methods(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     active_only: bool = True
 ):
-    q = db.query(PaymentMethodConfig)
+    q = db.tenant_query(PaymentMethodConfig)
     if active_only:
         q = q.filter(PaymentMethodConfig.is_active == True)
     return q.all()
@@ -45,15 +46,15 @@ def get_payment_methods(
 @router.post("/", response_model=PaymentMethodConfigResponse)
 def create_payment_method(
     data: PaymentMethodConfigCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    existing = db.query(PaymentMethodConfig).filter(PaymentMethodConfig.key == data.key).first()
+    existing = db.tenant_query(PaymentMethodConfig).filter(PaymentMethodConfig.key == data.key).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un método con esa clave")
     
     pm = PaymentMethodConfig(**data.model_dump())
-    db.add(pm)
+    db.tenant_add(pm)
     db.commit()
     db.refresh(pm)
     return pm
@@ -62,10 +63,10 @@ def create_payment_method(
 def update_payment_method(
     pm_id: UUID,
     data: PaymentMethodConfigCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    pm = db.query(PaymentMethodConfig).filter(PaymentMethodConfig.id == pm_id).first()
+    pm = db.tenant_query(PaymentMethodConfig).filter(PaymentMethodConfig.id == pm_id).first()
     if not pm:
         raise HTTPException(status_code=404, detail="Método no encontrado")
     
@@ -80,10 +81,10 @@ def update_payment_method(
 @router.delete("/{pm_id}")
 def delete_payment_method(
     pm_id: UUID,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    pm = db.query(PaymentMethodConfig).filter(PaymentMethodConfig.id == pm_id).first()
+    pm = db.tenant_query(PaymentMethodConfig).filter(PaymentMethodConfig.id == pm_id).first()
     if not pm:
         raise HTTPException(status_code=404, detail="Método no encontrado")
     

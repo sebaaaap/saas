@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 
+import api from "@/lib/api";
+import { toast } from "sonner";
+
 export interface BusinessSettings {
     businessName: string;
     businessType: string;
@@ -16,16 +19,16 @@ export interface BusinessSettings {
 }
 
 export const defaultSettings: BusinessSettings = {
-    businessName: 'VANKAI',
+    businessName: '',
     businessType: 'vulcanizacion',
-    description: 'KRYPTONITA VULCANIZA',
-    phone: '+56 9 1234 5678',
-    email: 'contacto@vankai.cl',
-    address: 'Av. Central 1234, Santiago, Chile',
-    taxId: '12.345.678-9',
+    description: '',
+    phone: '',
+    email: '',
+    address: '',
+    taxId: '',
     currency: 'CLP',
     logoBase64: null,
-    website: 'www.vankai.cl'
+    website: ''
 };
 
 export function useSettings() {
@@ -33,21 +36,62 @@ export function useSettings() {
     const [isLoaded, setIsLoaded] = useState(false);
 
     useEffect(() => {
-        const stored = localStorage.getItem('businessSettings');
-        if (stored) {
+        const fetchCompany = async () => {
             try {
-                const parsed = JSON.parse(stored);
-                setSettings({ ...defaultSettings, ...parsed });
+                const res = await api.get('/companies/me');
+                const data = res.data;
+                // Map the DB fields to the hook's interface
+                setSettings({
+                    ...defaultSettings,
+                    businessName: data.name || '',
+                    description: data.business_name || '',
+                    taxId: data.tax_id || '',
+                    email: data.email || '',
+                    phone: data.phone || '',
+                    logoBase64: data.logo_url 
+                        ? (data.logo_url.startsWith('http') ? data.logo_url : `${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}${data.logo_url}`)
+                        : null,
+                });
             } catch (e) {
-                console.error("Failed to parse settings", e);
+                console.error("Failed to load company settings from backend", e);
+            } finally {
+                setIsLoaded(true);
             }
-        }
-        setIsLoaded(true);
+        };
+
+        fetchCompany();
     }, []);
 
-    const saveSettings = (newSettings: BusinessSettings) => {
-        setSettings(newSettings);
-        localStorage.setItem('businessSettings', JSON.stringify(newSettings));
+    const saveSettings = async (newSettings: BusinessSettings) => {
+        try {
+            // Update local state first for fast UI
+            setSettings(newSettings);
+            
+            // Send mapping to backend
+            const updateData = {
+                name: newSettings.businessName,
+                business_name: newSettings.description, // using description as business_name here based on previous mapping
+                tax_id: newSettings.taxId,
+                email: newSettings.email,
+                phone: newSettings.phone,
+            };
+            
+            await api.patch('/companies/me', updateData);
+            
+            // Save additional fields in local storage temporarily if there are fields that don't map well yet
+            // like businessType, currency, address, etc.
+            const localFallback = {
+                businessType: newSettings.businessType,
+                address: newSettings.address,
+                currency: newSettings.currency,
+                website: newSettings.website
+            };
+            localStorage.setItem('businessSettings_extra', JSON.stringify(localFallback));
+            
+        } catch (e) {
+            console.error("Failed to save settings", e);
+            toast.error("Error al guardar la configuración");
+        }
     };
 
     return { settings, saveSettings, isLoaded };

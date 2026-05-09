@@ -1,8 +1,9 @@
 "use client"
 
-import useSWR from "swr"
+// import useSWR from "swr" // OT_HIDDEN: re-enable with OT indicator
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useSettings } from "@/hooks/useSettings"
 import type { Order } from "./pdv-types"
 import {
   ChevronDown,
@@ -16,13 +17,17 @@ import {
   Car,
   History,
   ArrowUpRight,
+  X,
+  TrendingUp,
 } from "lucide-react"
-import { useState, useMemo } from "react"
+import { useState, useEffect } from "react"
 
 interface PdvHeaderProps {
   currentOrder: Order
   orders: Order[]
+  paidOrders?: Order[]
   onNewOrder: () => void
+  onRemoveOrder?: (orderId: string) => void
   onSelectOrder: (order: Order) => void
   onOpenHistory: () => void
   onGoToBackend: () => void
@@ -40,7 +45,9 @@ interface PdvHeaderProps {
 export function PdvHeader({
   currentOrder,
   orders,
+  paidOrders = [],
   onNewOrder,
+  onRemoveOrder,
   onSelectOrder,
   onOpenHistory,
   onGoToBackend,
@@ -52,26 +59,47 @@ export function PdvHeader({
   userName,
   sessionId,
 }: PdvHeaderProps) {
+  const { settings } = useSettings()
   const draftOrders = orders.filter((o) => o.status === "draft")
   const selectedCustomer = currentOrder?.customer ?? null
 
-  // Fetch active OTs to show indicators (only those with pending balance)
-  const { data: activeOts } = useSWR("/pos/active-orders?pos_only=true", async () => {
-    try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/pos/active-orders?pos_only=true`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      return response.json();
-    } catch (e) { return [] }
-  });
+  const [showTraderStats, setShowTraderStats] = useState(false)
 
-  const customerOts = useMemo(() => {
-    if (!selectedCustomer || !activeOts) return [];
-    return activeOts.filter((ot: any) =>
-      String(ot.customer_id) === selectedCustomer.id ||
-      ot.customer?.rut === selectedCustomer.rut
-    );
-  }, [selectedCustomer, activeOts]);
+  // Toggle trader stats every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setShowTraderStats(prev => !prev)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Calculate session metrics
+  const sessionSales = paidOrders.reduce((sum, order) => sum + order.total, 0)
+  const sessionCost = paidOrders.reduce((sum, order) => {
+    return sum + order.lines.reduce((lineSum, line) => {
+      const cost = line.product.cost || 0
+      return lineSum + (cost * line.quantity)
+    }, 0)
+  }, 0)
+  
+  const sessionProfit = sessionSales - sessionCost
+
+  // OT_HIDDEN: Indicador de OT oculto temporalmente. Descomentar cuando las OTs estén activas.
+  // const { data: activeOts } = useSWR("/pos/active-orders?pos_only=true", async () => {
+  //   try {
+  //     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/pos/active-orders?pos_only=true`, {
+  //       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+  //     });
+  //     return response.json();
+  //   } catch (e) { return [] }
+  // });
+  // const customerOts = useMemo(() => {
+  //   if (!selectedCustomer || !activeOts) return [];
+  //   return activeOts.filter((ot: any) =>
+  //     String(ot.customer_id) === selectedCustomer.id ||
+  //     ot.customer?.rut === selectedCustomer.rut
+  //   );
+  // }, [selectedCustomer, activeOts]);
 
 
   return (
@@ -79,34 +107,52 @@ export function PdvHeader({
       {/* Left: Logo + Session */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Wrench className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-sm font-black text-foreground leading-none uppercase tracking-tight">Punto de Venta</h1>
-            <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
-              {userName || 'Usuario'} • {activeSessionName}
-            </p>
+          {settings?.logoBase64 ? (
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white p-0.5 border shadow-sm">
+              <img src={settings.logoBase64} alt="Logo Empresa" className="h-full w-full rounded-md object-contain" />
+            </div>
+          ) : (
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary shadow-sm">
+              <Wrench className="h-5 w-5 text-primary-foreground" />
+            </div>
+          )}
+          <div className="flex flex-col justify-center h-[40px] overflow-hidden relative min-w-[240px]">
+            {/* Título normal */}
+            <div className={`absolute inset-0 flex flex-col justify-center transition-all duration-500 ease-in-out ${showTraderStats ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
+              <h1 className="text-sm font-black text-foreground leading-none uppercase tracking-tight mt-0.5">Punto de Venta</h1>
+              <p className="text-[11px] text-muted-foreground font-medium mt-1 truncate">
+                {userName || 'Usuario'} • {activeSessionName}
+              </p>
+            </div>
+            
+            {/* Ticker Trader */}
+            <div className={`absolute inset-0 flex flex-col justify-center transition-all duration-500 ease-in-out ${showTraderStats ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
+              <h1 className="text-xs font-black text-emerald-600 dark:text-emerald-500 leading-none uppercase tracking-tight flex items-center gap-1 mt-0.5">
+                <TrendingUp className="h-3.5 w-3.5" /> VENTAS DE LA SESIÓN
+              </h1>
+              <p className="text-[12px] font-bold mt-1 text-foreground flex items-center gap-1.5">
+                ${sessionSales.toLocaleString()} 
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-500/10 px-1.5 py-0.5 rounded font-bold">
+                  +${sessionProfit.toLocaleString()}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="mx-2 h-6 w-px bg-border" />
 
-        {/* OT Indicator for current order's customer */}
-        {selectedCustomer && customerOts.length > 0 && (
+        {/* OT_HIDDEN: Indicador de OT pendiente oculto. Reactivar con OTs. */}
+        {/* {selectedCustomer && customerOts.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
             onClick={onOpenOtPayment}
-            className="flex items-center gap-1.5 px-2 h-9 rounded-lg border-2 border-orange-500/50 bg-orange-50 text-orange-700 hover:bg-orange-100 animate-pulse transition-all ml-2"
+            className="..."
           >
-            <Wrench className="h-4 w-4" />
-            <div className="flex flex-col items-start leading-none">
-              <span className="text-[10px] font-black uppercase tracking-tighter">OT Disponible</span>
-              <span className="text-[11px] font-bold">{customerOts.length} {customerOts.length === 1 ? 'pendiente' : 'pendientes'}</span>
-            </div>
+            ...
           </Button>
-        )}
+        )} */}
       </div>
 
       {/* Center: Order Tabs */}
@@ -137,11 +183,24 @@ export function PdvHeader({
                   </Badge>
                 )}
               </div>
-              <span className={`text-[10px] font-normal truncate max-w-[100px] mt-0.5 ${
-                isActive ? "text-primary/70" : "text-muted-foreground/60"
-              }`}>
-                {tabCustomer ? tabCustomer.name : "Público General"}
-              </span>
+              <div className="flex items-center gap-1 w-full mt-0.5">
+                <span className={`text-[10px] font-normal truncate max-w-[80px] ${
+                  isActive ? "text-primary/70" : "text-muted-foreground/60"
+                }`}>
+                  {tabCustomer ? tabCustomer.name : "Público General"}
+                </span>
+                
+                <div 
+                  className={`ml-auto p-0.5 rounded-full hover:bg-black/10 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground'} z-10`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (onRemoveOrder) onRemoveOrder(order.id)
+                  }}
+                  title="Cerrar orden"
+                >
+                  <X className="h-3 w-3" />
+                </div>
+              </div>
             </button>
           )
         })}

@@ -2,7 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
-from app.api import pos, inventory, purchases, sessions, products, locations, suppliers, categories, reports, customers, auth, users, quotes, reception, printing, branches, expenses, payment_methods
+from app.api import (
+    auth, pos, inventory, purchases, customers,
+    sessions, products, locations, suppliers,
+    categories, reports, users, quotes, reception,
+    printing, branches, expenses, payment_methods,
+    superadmin, companies
+)
 import os
 
 app = FastAPI(
@@ -45,8 +51,10 @@ app.include_router(quotes.router, prefix="/api/v1", tags=["Quotes"])
 app.include_router(reception.router, prefix="/api/v1/ot", tags=["Reception"])
 app.include_router(printing.router, prefix="/api/v1/printing", tags=["Printing"])
 app.include_router(branches.router, prefix="/api/v1/branches", tags=["Branches"])
+app.include_router(companies.router, prefix="/api/v1/companies", tags=["Companies"])
 app.include_router(expenses.router, prefix="/api/v1/expenses", tags=["Expenses"])
 app.include_router(payment_methods.router, prefix="/api/v1/payment-methods", tags=["Payment Methods"])
+app.include_router(superadmin.router, prefix="/api/v1/superadmin", tags=["Super Admin"])
 
 @app.get("/")
 def root():

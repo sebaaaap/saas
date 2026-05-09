@@ -21,10 +21,11 @@ import { useAuth } from "@/contexts/AuthContext"
 
 interface PdvOpenSessionProps {
     open: boolean
+    onClose?: () => void
     onConfirm: (initialCash: number, registerId: string, userId: string, notes: string) => Promise<void>
 }
 
-export function PdvOpenSession({ open, onConfirm }: PdvOpenSessionProps) {
+export function PdvOpenSession({ open, onClose, onConfirm }: PdvOpenSessionProps) {
     const { user } = useAuth()
     const [initialCash, setInitialCash] = useState<string>("0")
     const [selectedRegister, setSelectedRegister] = useState<string>("")
@@ -67,7 +68,7 @@ export function PdvOpenSession({ open, onConfirm }: PdvOpenSessionProps) {
     const canConfirm = selectedRegister && user && !isLoading
 
     return (
-        <Dialog open={open}>
+        <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen && onClose) onClose() }}>
             <DialogContent className="sm:max-w-[425px] overflow-hidden border-none shadow-2xl p-0 bg-transparent">
                 <div className="bg-gradient-to-br from-primary to-primary/80 p-8 text-white relative overflow-hidden">
                     {/* Decorative circles */}

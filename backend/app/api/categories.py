@@ -1,10 +1,10 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database import get_db_session
 from app.models.base import ProductCategory
 from app.schemas.categories import CategoryCreate, CategoryResponse, CategoryUpdate
 from typing import List
+from app.api.deps import get_current_user, get_tenant_session
+from app.db.tenant_session import TenantSession
 
 import random
 import colorsys
@@ -27,12 +27,16 @@ def generate_pastel_color():
     return '#%02x%02x%02x' % (int(r * 255), int(g * 255), int(b * 255))
 
 @router.post("/", response_model=CategoryResponse)
-def create_category(data: CategoryCreate, db: Session = Depends(get_db_session)):
+def create_category(
+    data: CategoryCreate,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(get_current_user)
+):
     # Si ya trae color, lo usamos, si no, asignamos uno
     color = data.color
     if not color:
         # Obtener colores ya usados
-        used_colors = [c.color for c in db.query(ProductCategory.color).all() if c.color]
+        used_colors = [c.color for c in db.tenant_query(ProductCategory).all() if c.color]
         
         # Intentar con predefinidos que no estén usados
         available_predefined = [c for c in PREDEFINED_PASTELS if c not in used_colors]
@@ -40,7 +44,6 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db_session))
         if available_predefined:
             color = random.choice(available_predefined)
         else:
-            # Si no hay predefinidos disponibles, generar uno aleatorio
             color = generate_pastel_color()
 
     db_obj = ProductCategory(
@@ -54,8 +57,11 @@ def create_category(data: CategoryCreate, db: Session = Depends(get_db_session))
     return db_obj
 
 @router.get("/", response_model=List[CategoryResponse])
-def list_categories(db: Session = Depends(get_db_session)):
-    categories = db.query(ProductCategory).all()
+def list_categories(
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(get_current_user)
+):
+    categories = db.tenant_query(ProductCategory).all()
     
     needs_commit = False
     used_colors = [c.color for c in categories if c.color]
@@ -79,8 +85,13 @@ def list_categories(db: Session = Depends(get_db_session)):
     return categories
 
 @router.put("/{category_id}", response_model=CategoryResponse)
-def update_category(category_id: UUID, data: CategoryUpdate, db: Session = Depends(get_db_session)):
-    db_obj = db.query(ProductCategory).filter(ProductCategory.id == category_id).first()
+def update_category(
+    category_id: UUID,
+    data: CategoryUpdate,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(get_current_user)
+):
+    db_obj = db.tenant_query(ProductCategory).filter(ProductCategory.id == category_id).first()
     if not db_obj:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     
@@ -96,8 +107,12 @@ def update_category(category_id: UUID, data: CategoryUpdate, db: Session = Depen
     return db_obj
 
 @router.delete("/{category_id}")
-def delete_category(category_id: UUID, db: Session = Depends(get_db_session)):
-    db_obj = db.query(ProductCategory).filter(ProductCategory.id == category_id).first()
+def delete_category(
+    category_id: UUID,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(get_current_user)
+):
+    db_obj = db.tenant_query(ProductCategory).filter(ProductCategory.id == category_id).first()
     if not db_obj:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     

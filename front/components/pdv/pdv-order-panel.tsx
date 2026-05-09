@@ -30,7 +30,7 @@ interface PdvOrderPanelProps {
   numpadMode: NumpadMode
   onNumpadModeChange: (mode: NumpadMode) => void
   onNumpadInput: (value: string) => void
-  onCargarOt: () => void
+  onCargarOt?: () => void // OT_HIDDEN: will be required again when OTs go live
   customersList?: any[]
   onSetCustomer: (customer: Customer | null) => void
   onCustomerCreated?: () => void

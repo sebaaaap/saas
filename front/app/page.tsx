@@ -6,6 +6,16 @@ import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
 import { Play, Loader2, Monitor } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 import { PdvHeader } from "@/components/pdv/pdv-header"
 import { PdvCategories } from "@/components/pdv/pdv-categories"
@@ -14,7 +24,7 @@ import { PdvOrderPanel } from "@/components/pdv/pdv-order-panel"
 import { PdvPaymentModal } from "@/components/pdv/pdv-payment-modal"
 import { PdvOrderHistory } from "@/components/pdv/pdv-order-history"
 import { PdvCloseSession } from "@/components/pdv/pdv-close-session"
-import { PdvOtPaymentModal } from "@/components/pdv/pdv-ot-payment-modal"
+// import { PdvOtPaymentModal } from "@/components/pdv/pdv-ot-payment-modal" // OT_HIDDEN
 import { PdvOpenSession } from "@/components/pdv/pdv-open-session"
 import { PdvRefundModal } from "@/components/pdv/pdv-refund-modal"
 import { PdvVehicleHistory } from "@/components/pdv/pdv-vehicle-history"
@@ -88,11 +98,11 @@ export default function AppPage() {
     }
   }, [user, isLoading, currentModule])
 
-  // API Data
-  const { data: apiProducts, error: productsError } = useSWR("/products/", () => apiService.getProducts())
-  const { data: apiCategories } = useSWR("/categories/", () => apiService.getCategories())
-  const { data: activeSession } = useSWR("/sessions/active", () => apiService.getActiveSession())
-  const { data: apiCustomers } = useSWR("/customers/", () => apiService.getCustomers())
+  // API Data — solo se ejecutan cuando hay un usuario autenticado (null key = SWR no fetcha)
+  const { data: apiProducts, error: productsError } = useSWR(user ? "/products/" : null, () => apiService.getProducts())
+  const { data: apiCategories } = useSWR(user ? "/categories/" : null, () => apiService.getCategories())
+  const { data: activeSession } = useSWR(user ? "/sessions/active" : null, () => apiService.getActiveSession())
+  const { data: apiCustomers } = useSWR(user ? "/customers/" : null, () => apiService.getCustomers())
 
   // PdV state
   const [orders, setOrders] = useState<Order[]>([createEmptyOrder()])
@@ -107,10 +117,13 @@ export default function AppPage() {
   const [paidOrders, setPaidOrders] = useState<Order[]>([])
   const [showOpenSession, setShowOpenSession] = useState(false)
   const [showRefund, setShowRefund] = useState(false)
-  const [showOtPayment, setShowOtPayment] = useState(false)
+  // const [showOtPayment, setShowOtPayment] = useState(false) // OT_HIDDEN
   const [showVehicleHistory, setShowVehicleHistory] = useState(false)
   const [showExpenseMode, setShowExpenseMode] = useState(false)
   const [refundOrder, setRefundOrder] = useState<Order | null>(null)
+  
+  // Alert dialog for removing orders
+  const [orderToRemoveId, setOrderToRemoveId] = useState<string | null>(null)
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("")
@@ -185,6 +198,7 @@ export default function AppPage() {
         id: String(p.id),
         name: p.name,
         price: toNum(p.price),
+        cost: toNum((p as any).cost || 0),
         categoryId: catId,
         barcode: p.barcode,
         stock: toNum((p as any).total_stock || (p as any).stock_quantity || 0),
@@ -505,6 +519,7 @@ export default function AppPage() {
                 id: String(item.product_id),
                 name: apiProd?.name || `Producto #${item.product_id}`,
                 price: item.unit_price ? toNum(item.unit_price) : toNum(apiProd?.price || 0),
+                cost: toNum((apiProd as any)?.cost || 0),
                 categoryId: apiProd?.category || String(apiProd?.category_id) || "all",
                 stock: toNum((apiProd as any)?.total_stock || (apiProd as any)?.stock_quantity || 0),
                 tax: 19,
@@ -643,6 +658,39 @@ export default function AppPage() {
     setNumpadBuffer("")
   }, [])
 
+  const confirmOrderRemoval = useCallback((orderId: string) => {
+    setOrders(prev => {
+      if (prev.length <= 1) {
+        return [createEmptyOrder()]
+      }
+      return prev.filter(o => o.id !== orderId)
+    })
+
+    const closingIndex = ordersRef.current.findIndex(o => o.id === orderId)
+    const currentIndex = currentOrderIndexRef.current
+
+    if (closingIndex === currentIndex) {
+      setCurrentOrderIndex(Math.max(0, ordersRef.current.length - 2))
+    } else if (closingIndex < currentIndex) {
+      setCurrentOrderIndex(currentIndex - 1)
+    }
+
+    setSelectedLineId(null)
+    setNumpadBuffer("")
+    setOrderToRemoveId(null)
+  }, [])
+
+  const handleRemoveOrder = useCallback((orderId: string) => {
+    const orderToRemove = ordersRef.current.find(o => o.id === orderId)
+    if (!orderToRemove) return
+
+    if (orderToRemove.lines.length > 0) {
+      setOrderToRemoveId(orderId)
+    } else {
+      confirmOrderRemoval(orderId)
+    }
+  }, [confirmOrderRemoval])
+
   // Set customer on current order
   const handleSetCurrentOrderCustomer = useCallback((customer: Customer | null) => {
     updateCurrentOrder((order) => ({ ...order, customer }))
@@ -748,33 +796,19 @@ export default function AppPage() {
     [activeSession],  // selectedCustomer ya no es global
   )
 
-  const handleConfirmOtPayment = async (amount: number, method: string, otId?: string, itemIds?: string[]) => {
-    if (!activeSession) {
-      toast.error("No hay sesión activa para procesar el abono.")
-      return
-    }
-    if (!otId) {
-      toast.error("No se ha seleccionado una OT.")
-      return
-    }
-
-    try {
-      await apiService.addWorkOrderPayment(
-        otId,
-        {
-          amount: amount,
-          payment_method: method.toLowerCase(),
-          item_ids: itemIds
-        },
-        activeSession.id
-      )
-      toast.success(`Abono a OT por $${amount.toLocaleString("es-CL")} registrado en caja.`)
-      setShowOtPayment(false)
-      mutate("/sessions/active")
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Error al procesar el abono de OT")
-    }
-  }
+  // OT_HIDDEN: Pago de OT desde PDV. La lógica está intacta, solo comentada.
+  // const handleConfirmOtPayment = async (amount: number, method: string, otId?: string, itemIds?: string[]) => {
+  //   if (!activeSession) { toast.error("No hay sesión activa."); return }
+  //   if (!otId) { toast.error("No se ha seleccionado una OT."); return }
+  //   try {
+  //     await apiService.addWorkOrderPayment(otId, { amount, payment_method: method.toLowerCase(), item_ids: itemIds }, activeSession.id)
+  //     toast.success(`Abono a OT por $${amount.toLocaleString("es-CL")} registrado en caja.`)
+  //     setShowOtPayment(false)
+  //     mutate("/sessions/active")
+  //   } catch (error: any) {
+  //     toast.error(error.response?.data?.detail || "Error al procesar el abono de OT")
+  //   }
+  // }
 
   // Refund
   const handleRefund = useCallback(
@@ -933,13 +967,15 @@ export default function AppPage() {
     notes: activeSession.notes || ""
   } : null
 
-  if (isLoading || currentModule === null) {
+  if (isLoading) {
     return <div className="flex h-screen items-center justify-center bg-[#f8fafc]"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
   }
 
   return (
     <ProtectedRoute>
-      {currentModule === "backend" ? (
+      {currentModule === null ? (
+        <div className="flex h-screen items-center justify-center bg-[#f8fafc]"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+      ) : currentModule === "backend" ? (
         <BackendDashboard onNavigate={handleNavigate} />
       ) : currentModule === "clientes" as any ? (
         <CustomersModule onBack={() => setCurrentModule("backend")} />
@@ -954,19 +990,21 @@ export default function AppPage() {
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg>
             Volver al Tablero
           </button>
-          <PdvOpenSession open={showOpenSession} onConfirm={handleConfirmOpenSession} />
+          <PdvOpenSession open={showOpenSession} onClose={() => setShowOpenSession(false)} onConfirm={handleConfirmOpenSession} />
         </div>
       ) : (
         <div className="flex h-screen flex-col overflow-hidden bg-background">
           <PdvHeader
             currentOrder={currentOrder}
             orders={orders}
+            paidOrders={paidOrders}
             onNewOrder={handleNewOrder}
+            onRemoveOrder={handleRemoveOrder}
             onSelectOrder={handleSelectOrder}
             onOpenHistory={() => setShowHistory(true)}
             onGoToBackend={() => setCurrentModule("backend")}
             onOpenCloseSession={() => setShowCloseSession(true)}
-            onOpenOtPayment={() => setShowOtPayment(true)}
+            // onOpenOtPayment={() => setShowOtPayment(true)} // OT_HIDDEN
             onOpenVehicleHistory={() => setShowVehicleHistory(true)}
             onOpenExpenseMode={() => setShowExpenseMode(true)}
             activeSessionName={uiActiveSession?.name}
@@ -1004,7 +1042,7 @@ export default function AppPage() {
               numpadMode={numpadMode}
               onNumpadModeChange={handleNumpadModeChange}
               onNumpadInput={handleNumpadInput}
-              onCargarOt={() => setShowOtPayment(true)}
+              // onCargarOt={() => setShowOtPayment(true)} // OT_HIDDEN
               customersList={mappedApiCustomers}
               onSetCustomer={handleSetCurrentOrderCustomer}
               onCustomerCreated={() => mutate("/customers/")}
@@ -1012,12 +1050,33 @@ export default function AppPage() {
           </div>
 
           <PdvPaymentModal open={showPayment} onClose={() => setShowPayment(false)} total={currentOrder?.total || 0} onConfirmPayment={handleConfirmPayment} />
-          <PdvOtPaymentModal open={showOtPayment} onClose={() => setShowOtPayment(false)} onConfirm={handleConfirmOtPayment} selectedCustomer={currentOrder?.customer ?? null} />
+          {/* OT_HIDDEN: Modal pago de OT — reactivar con OTs */}
+          {/* <PdvOtPaymentModal open={showOtPayment} onClose={() => setShowOtPayment(false)} onConfirm={handleConfirmOtPayment} selectedCustomer={currentOrder?.customer ?? null} /> */}
           <PdvOrderHistory open={showHistory} onClose={() => setShowHistory(false)} paidOrders={paidOrders} onRefund={handleRefund} />
           {activeSession && <PdvCloseSession open={showCloseSession} onClose={() => setShowCloseSession(false)} session={uiActiveSession!} onConfirmClose={handleConfirmCloseSession} />}
           <PdvRefundModal open={showRefund} order={refundOrder} onClose={() => setShowRefund(false)} onConfirm={handleConfirmRefund} />
           <PdvVehicleHistory open={showVehicleHistory} onOpenChange={setShowVehicleHistory} initialPlate={currentOrder?.customer?.vehicles?.[0]?.license_plate} />
           <PdvExpenseMode open={showExpenseMode} onOpenChange={setShowExpenseMode} sessionId={activeSession?.id} />
+          
+          <AlertDialog open={!!orderToRemoveId} onOpenChange={(o) => !o && setOrderToRemoveId(null)}>
+            <AlertDialogContent className="sm:max-w-[425px] bg-background border border-border/50 shadow-2xl backdrop-blur-xl">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-xl font-bold">Cerrar Orden</AlertDialogTitle>
+                <AlertDialogDescription className="text-muted-foreground text-sm">
+                  ¿Estás seguro de que deseas eliminar esta orden? Tiene productos agregados y la información se perderá.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="mt-4 gap-2 sm:gap-0">
+                <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={() => orderToRemoveId && confirmOrderRemoval(orderToRemoveId)} 
+                  className="bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg shadow-red-500/20 transition-all font-bold"
+                >
+                  Cerrar y Descartar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
     </ProtectedRoute>

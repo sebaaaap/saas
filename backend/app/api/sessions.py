@@ -89,11 +89,12 @@ def close_session(
 def get_active_session(
     user_id: Optional[str] = Query(None),
     db: Session = Depends(get_db_session),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
-    """Obtiene la sesión abierta actual del usuario"""
+    """Obtiene la sesión abierta actual del usuario para la sucursal actual"""
     target_user_id = user_id or current_user.username
-    session = SessionService.get_open_session(db, target_user_id)
+    session = SessionService.get_open_session(db, target_user_id, branch_id)
     return session
 
 @router.get("/", response_model=List[CashSessionResponse])

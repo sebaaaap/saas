@@ -173,11 +173,13 @@ class SessionService:
         return session
     
     @staticmethod
-    def get_open_session(db: Session, user_id: Optional[str] = None) -> Optional[CashSession]:
-        """Obtiene la sesión abierta actual"""
+    def get_open_session(db: Session, user_id: Optional[str] = None, branch_id: Optional[UUID] = None) -> Optional[CashSession]:
+        """Obtiene la sesión abierta actual, filtrada opcionalmente por sucursal"""
         query = db.query(CashSession).filter(CashSession.status == "open")
         if user_id:
             query = query.filter(CashSession.user_id == user_id)
+        if branch_id:
+            query = query.join(CashRegister).filter(CashRegister.branch_id == branch_id)
         return query.first()
     
     @staticmethod

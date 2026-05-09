@@ -187,13 +187,17 @@ class QuoteWorkOrderService:
 
 
     @staticmethod
-    def get_active_work_orders(db: Session, pos_only: bool = False):
-        orders = db.query(WorkOrder).options(
+    def get_active_work_orders(db: Session, pos_only: bool = False, branch_id: Optional[UUID] = None):
+        query = db.query(WorkOrder).options(
             joinedload(WorkOrder.items),
             joinedload(WorkOrder.tickets)
         ).filter(
             WorkOrder.state.in_([WorkOrderState.OPEN, WorkOrderState.IN_PROGRESS, WorkOrderState.READY, WorkOrderState.COMPLETED])
-        ).all()
+        )
+        if branch_id:
+            query = query.filter(WorkOrder.branch_id == branch_id)
+        
+        orders = query.all()
         
         if not pos_only:
             return orders

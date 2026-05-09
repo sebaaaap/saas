@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 interface User {
     username: string;
     full_name: string | null;
-    role: 'admin' | 'vendedor' | 'inventario';
+    role: 'superadmin' | 'admin' | 'vendedor' | 'inventario';
     id: string;
     branch_id?: string | null;
 }
@@ -20,6 +20,7 @@ interface AuthContextType {
     isAdmin: boolean;
     isSeller: boolean;
     isInventory: boolean;
+    isSuperAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,10 +105,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 // Redirigir según rol
-                if (userData.role === 'admin') {
-                    router.push('/'); // Panel principal con acceso a todo
+                if (userData.role === 'superadmin') {
+                    router.push('/superadmin');
+                } else if (userData.role === 'admin') {
+                    router.push('/');
                 } else {
-                    router.push('/'); // Vendedor también va al panel principal (POS)
+                    router.push('/');
                 }
             }
         } catch (error) {
@@ -129,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isAdmin = user?.role === 'admin';
     const isSeller = user?.role === 'vendedor';
     const isInventory = user?.role === 'inventario';
+    const isSuperAdmin = user?.role === 'superadmin';
 
     return (
         <AuthContext.Provider
@@ -141,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 isAdmin,
                 isSeller,
                 isInventory,
+                isSuperAdmin,
             }}
         >
             {children}

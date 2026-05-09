@@ -21,14 +21,37 @@ export function BusinessInfo() {
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setFormData(prev => ({ ...prev, logoBase64: reader.result as string }));
-            };
-            reader.readAsDataURL(file);
+            try {
+                const formDataStr = new FormData();
+                formDataStr.append("file", file);
+                
+                // Show temporary local preview
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setFormData(prev => ({ ...prev, logoBase64: reader.result as string }));
+                };
+                reader.readAsDataURL(file);
+                
+                // Upload to server
+                import('@/lib/api').then(({ default: api }) => {
+                    api.post('/companies/me/logo', formDataStr, {
+                        headers: { "Content-Type": "multipart/form-data" }
+                    }).then(res => {
+                        const url = res.data.logo_url;
+                        const fullUrl = url.startsWith('http') ? url : `${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}${url}`;
+                        setFormData(prev => ({ ...prev, logoBase64: fullUrl }));
+                        saveSettings({ ...formData, logoBase64: fullUrl });
+                    }).catch(err => {
+                        console.error("Error subiendo logo", err);
+                    });
+                });
+                
+            } catch (error) {
+                console.error("Error handling logo upload", error);
+            }
         }
     };
 

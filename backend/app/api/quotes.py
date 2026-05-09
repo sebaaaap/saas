@@ -50,9 +50,13 @@ def delete_quote(quote_id: UUID, db: Session = Depends(get_db_session)):
     return {"message": "Cotización eliminada correctamente"}
 
 @router.get("/pos/active-orders", response_model=List[WorkOrderResponse])
-def get_active_orders(pos_only: bool = Query(False), db: Session = Depends(get_db_session)):
-    """Recupera todas las OTs activas (abierta, en progreso, lista)."""
-    return QuoteWorkOrderService.get_active_work_orders(db, pos_only=pos_only)
+def get_active_orders(
+    pos_only: bool = Query(False), 
+    db: Session = Depends(get_db_session),
+    branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
+):
+    """Recupera todas las OTs activas (abierta, en progreso, lista) filtradas opcionalmente por sucursal."""
+    return QuoteWorkOrderService.get_active_work_orders(db, pos_only=pos_only, branch_id=branch_id)
 
 @router.post("/ot/{wo_id}/payments", response_model=WorkOrderPaymentResponse)
 def add_work_order_payment(

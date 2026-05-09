@@ -2,6 +2,7 @@ export interface Product {
   id: string
   name: string
   price: number
+  cost?: number
   categoryId: string
   barcode?: string
   image?: string

@@ -295,7 +295,7 @@ export default function CustomersModule({ onBack }: CustomersModuleProps) {
                                 <TabsTrigger value="overview">Resumen</TabsTrigger>
                                 <TabsTrigger value="vehicles">Vehículos ({selectedCustomer.vehicles?.length})</TabsTrigger>
                                 <TabsTrigger value="history">Historial de Ventas</TabsTrigger>
-                                <TabsTrigger value="ots">Historial OT</TabsTrigger>
+                                {/* OT_HIDDEN: <TabsTrigger value="ots">Historial OT</TabsTrigger> */}
                                 <TabsTrigger value="quotes">Historial Cotizaciones</TabsTrigger>
                             </TabsList>
 
@@ -482,79 +482,8 @@ export default function CustomersModule({ onBack }: CustomersModuleProps) {
                                 </Card>
                             </TabsContent>
 
-                            {/* Work Orders Tab */}
-                            <TabsContent value="ots">
-                                <Card className="p-6 border-none shadow-sm bg-card/50">
-                                    <div className="flex items-center justify-between mb-6">
-                                        <h3 className="text-xl font-bold font-display">Historial de Ordenes de Trabajo (OT)</h3>
-                                        <Badge variant="outline" className="bg-blue-500/5 text-blue-600 border-blue-500/20">
-                                            {history?.work_orders?.length || 0} OTs Registradas
-                                        </Badge>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {history?.work_orders?.length === 0 ? (
-                                            <div className="col-span-2 p-12 text-center text-muted-foreground italic">No hay órdenes de trabajo registradas</div>
-                                        ) : (
-                                            history?.work_orders?.map((ot: any) => (
-                                                <div
-                                                    key={ot.id}
-                                                    className="p-5 rounded-2xl border border-border bg-white hover:border-blue-500/50 hover:shadow-md transition-all cursor-pointer group"
-                                                    onClick={() => setSelectedOt(ot)}
-                                                >
-                                                    <div className="flex justify-between items-start mb-4">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-black text-slate-500">OT-{String(ot.id).slice(0, 6).toUpperCase()}</div>
-                                                            <Badge variant="outline" className="text-[9px] bg-primary/5 text-primary border-primary/20 uppercase">{ot.branch_name || 'Casa Matriz'}</Badge>
-                                                        </div>
-                                                        <Badge
-                                                            variant={ot.state === 'finalizada' ? 'default' : 'secondary'}
-                                                            className={`text-[9px] uppercase font-black ${ot.state === 'finalizada' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
-                                                        >
-                                                            {ot.state}
-                                                        </Badge>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-3 mb-4">
-                                                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                                                            <Car className="w-5 h-5 text-blue-600" />
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-lg font-black font-mono tracking-tighter uppercase">{ot.vehicle}</div>
-                                                            <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">{new Date(ot.date).toLocaleDateString()}</div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="space-y-3">
-                                                        <div>
-                                                            <div className="flex justify-between text-[10px] font-bold uppercase text-slate-400 mb-1">
-                                                                <span>Pago</span>
-                                                                <span>{Math.round(ot.financial_progress)}%</span>
-                                                            </div>
-                                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${ot.financial_progress}%` }} />
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="flex justify-between text-[10px] font-bold uppercase text-slate-400 mb-1">
-                                                                <span>Trabajo</span>
-                                                                <span>{Math.round(ot.operational_progress)}%</span>
-                                                            </div>
-                                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-blue-500 transition-all" style={{ width: `${ot.operational_progress}%` }} />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                                                        <span className="text-xs font-bold text-slate-500">Monto Total</span>
-                                                        <span className="text-base font-black text-slate-900">${ot.total?.toLocaleString()}</span>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </Card>
-                            </TabsContent>
+                            {/* OT_HIDDEN: Tab contenido Historial OT oculto. Reactivar cuando OTs estén en producción. */}
+                            {/* <TabsContent value="ots"> ... </TabsContent> */}
 
                             {/* Quotes Tab */}
                             <TabsContent value="quotes">
@@ -721,8 +650,9 @@ export default function CustomersModule({ onBack }: CustomersModuleProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* Modal: Detalle de OT */}
-            <Dialog open={!!selectedOt} onOpenChange={() => setSelectedOt(null)}>
+            {/* OT_HIDDEN: Modal Detalle de OT — reactivar cuando las OTs estén en producción */}
+            {/* <Dialog open={!!selectedOt} onOpenChange={() => setSelectedOt(null)}> ... </Dialog> */}
+            {false && <Dialog open={!!selectedOt} onOpenChange={() => setSelectedOt(null)}>
                 <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-white rounded-3xl">
                     {selectedOt && (
                         <>
@@ -874,7 +804,7 @@ export default function CustomersModule({ onBack }: CustomersModuleProps) {
                         </>
                     )}
                 </DialogContent>
-            </Dialog>
+            </Dialog>}
 
             {/* Modal: Detalle de Cotización */}
             <Dialog open={!!selectedQuote} onOpenChange={(open) => !open && setSelectedQuote(null)}>
