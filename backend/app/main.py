@@ -18,15 +18,17 @@ app = FastAPI(
 )
 
 # CORS
-origins = [str(origin) for origin in settings.CORS_ORIGINS]
+origins = [str(o) for o in settings.CORS_ORIGINS] if settings.CORS_ORIGINS else ["*"]
+print(f"[CORS] Allowed origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Servir archivos estáticos (imágenes de productos)
 UPLOAD_DIR = "uploads"

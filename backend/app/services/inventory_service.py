@@ -1,15 +1,15 @@
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from app.models.base import InventoryMovement, InventoryMovementItem, Product, MovementType
 from app.schemas.inventory import InventoryMovementCreate, InventoryMovementItemCreate
 from fastapi import HTTPException
 
 class InventoryService:
-    def __init__(self, db: Session):
+    def __init__(self, db: TenantSession):
         self.db = db
 
     def _get_or_create_merma_location(self, branch_id=None) -> int:
         from app.models.base import StorageLocation
-        query = self.db.query(StorageLocation).filter(StorageLocation.name == "Pasillo Mermas")
+        query = self.db.tenant_query(StorageLocation).filter(StorageLocation.name == "Pasillo Mermas")
         if branch_id:
             query = query.filter(StorageLocation.branch_id == branch_id)
         else:
@@ -31,7 +31,7 @@ class InventoryService:
     def _get_or_create_stock_location(self, branch_id=None) -> int:
         from app.models.base import StorageLocation
         # Intentamos buscar "Pasillo Stock" o simplemente "Stock" si el usuario lo prefiere, pero usaremos "Pasillo Stock" para consistencia
-        query = self.db.query(StorageLocation).filter(StorageLocation.name == "Pasillo Stock")
+        query = self.db.tenant_query(StorageLocation).filter(StorageLocation.name == "Pasillo Stock")
         if branch_id:
             query = query.filter(StorageLocation.branch_id == branch_id)
         else:
@@ -51,7 +51,7 @@ class InventoryService:
 
     def _get_or_create_traslados_location(self, branch_id=None) -> int:
         from app.models.base import StorageLocation
-        query = self.db.query(StorageLocation).filter(StorageLocation.name == "Traslados")
+        query = self.db.tenant_query(StorageLocation).filter(StorageLocation.name == "Traslados")
         if branch_id:
             query = query.filter(StorageLocation.branch_id == branch_id)
         else:
@@ -76,7 +76,7 @@ class InventoryService:
         Si el producto origen se borra (fusión total), producto_origen será el objeto borrado (pero con ID válido).
         """
         # Buscar si ya existe el mismo producto ACTIVO en la ubicación de destino
-        target_product = self.db.query(Product).filter(
+        target_product = self.db.tenant_query(Product).filter(
             Product.barcode == product.barcode,
             Product.location_id == to_location_id,
             Product.is_active == True
@@ -84,11 +84,11 @@ class InventoryService:
 
         # VALIDACIÓN DE RESTRICCIÓN DE UBICACIÓN (SI ES ESTRICTA)
         from app.models.base import StorageLocation
-        target_loc = self.db.query(StorageLocation).filter(StorageLocation.id == to_location_id).first()
+        target_loc = self.db.tenant_query(StorageLocation).filter(StorageLocation.id == to_location_id).first()
         
         if target_loc and not target_loc.allows_multiple_products:
             # Si no permite múltiples, verificamos si hay OTRO producto (diferente barcode) con stock > 0
-            other_occupant = self.db.query(Product).filter(
+            other_occupant = self.db.tenant_query(Product).filter(
                 Product.location_id == to_location_id,
                 Product.barcode != product.barcode,
                 Product.is_active == True,
@@ -154,7 +154,7 @@ class InventoryService:
         Restaura stock desde Pasillo Mermas a Pasillo Stock.
         """
         # 1. Validar producto
-        product = self.db.query(Product).filter(Product.id == product_id).first()
+        product = self.db.tenant_query(Product).filter(Product.id == product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
             
@@ -198,7 +198,7 @@ class InventoryService:
         self.db.flush()
 
         for item in data.items:
-            product = self.db.query(Product).filter(Product.id == item.product_id).first()
+            product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
 
@@ -282,64 +282,124 @@ class InventoryService:
         except Exception as e:
             self.db.rollback()
             raise e
+
     def transfer_between_branches(self, data: 'InterBranchTransferCreate', user_id: str = None) -> InventoryMovement:
         """
-        Transfiere stock entre sucursales.
-        Crea dos movimientos: uno de SALIDA en origen y uno de ENTRADA en destino.
+        Transfiere stock entre sucursales de la MISMA empresa.
+
+        Lógica:
+          - Valida que ambas sucursales pertenecen a la empresa autenticada.
+          - Busca el producto por ID + barcode en origen.
+          - Busca (o crea) el producto en destino por barcode.
+          - Si no existe en destino, lo clona automáticamente con company_id correcto.
+          - Descuenta stock en origen, suma en destino.
+          - Registra dos movimientos (SALIDA / ENTRADA).
         """
-        # 1. Crear movimiento de salida en origen
+        from app.models.base import Branch, StorageLocation
+
+        company_id = self.db.company_id
+
+        # ── Validar sucursales ───────────────────────────────────────────────────
+        from_branch = self.db._db.query(Branch).filter(
+            Branch.id == data.from_branch_id,
+            Branch.company_id == company_id
+        ).first()
+        if not from_branch:
+            raise HTTPException(status_code=404, detail="Sucursal de origen no encontrada o no pertenece a tu empresa")
+
+        to_branch = self.db._db.query(Branch).filter(
+            Branch.id == data.to_branch_id,
+            Branch.company_id == company_id
+        ).first()
+        if not to_branch:
+            raise HTTPException(status_code=404, detail="Sucursal de destino no encontrada o no pertenece a tu empresa")
+
+        if from_branch.id == to_branch.id:
+            raise HTTPException(status_code=400, detail="Las sucursales de origen y destino deben ser diferentes")
+
+        # ── Crear movimientos ────────────────────────────────────────────────────
         exit_movement = InventoryMovement(
             type=MovementType.BRANCH_TRANSFER_OUT,
-            reason=f"Hacia sucursal {data.to_branch_id}: {data.reason or ''}",
-            user_id=user_id
+            reason=f"Traslado hacia '{to_branch.name}': {data.reason or ''}",
+            user_id=user_id,
+            company_id=company_id
         )
-        self.db.add(exit_movement)
-        
-        # 2. Crear movimiento de entrada en destino
         entry_movement = InventoryMovement(
             type=MovementType.BRANCH_TRANSFER_IN,
-            reason=f"Desde sucursal {data.from_branch_id}: {data.reason or ''}",
-            user_id=user_id
+            reason=f"Traslado desde '{from_branch.name}': {data.reason or ''}",
+            user_id=user_id,
+            company_id=company_id
         )
-        self.db.add(entry_movement)
-        self.db.flush()
+        self.db._db.add(exit_movement)
+        self.db._db.add(entry_movement)
+        self.db._db.flush()
 
         for item_req in data.items:
-            # Producto origen
-            source_p = self.db.query(Product).filter(
+            # ── Buscar producto en origen ────────────────────────────────────────
+            # Usamos _db con filtro explícito de company_id para poder cruzar
+            # sucursales dentro de la misma empresa sin violar el aislamiento.
+            source_p = self.db._db.query(Product).filter(
                 Product.id == item_req.product_id,
-                Product.branch_id == data.from_branch_id
+                Product.branch_id == data.from_branch_id,
+                Product.company_id == company_id,
+                Product.is_active == True
             ).first()
-            
-            if not source_p:
-                raise HTTPException(status_code=404, detail=f"Producto {item_req.product_id} no encontrado en origen")
-            
-            if source_p.stock_quantity < item_req.quantity:
-                raise HTTPException(status_code=400, detail=f"Stock insuficiente en origen para {source_p.name}")
 
-            # 3. Restar stock en origen
+            if not source_p:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Producto no encontrado en sucursal '{from_branch.name}'. "
+                           f"Asegúrate de que el producto existe y tiene stock."
+                )
+
+            if (source_p.stock_quantity or 0) < item_req.quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Stock insuficiente para '{source_p.name}'. "
+                           f"Disponible: {source_p.stock_quantity}, solicitado: {item_req.quantity}"
+                )
+
+            # ── Restar stock en origen ───────────────────────────────────────────
             stock_before_exit = source_p.stock_quantity
             source_p.stock_quantity -= item_req.quantity
-            
-            exit_item = InventoryMovementItem(
+
+            self.db._db.add(InventoryMovementItem(
                 movement_id=exit_movement.id,
                 product_id=source_p.id,
                 quantity=item_req.quantity,
                 stock_before=stock_before_exit,
-                stock_after=source_p.stock_quantity
-            )
-            self.db.add(exit_item)
+                stock_after=source_p.stock_quantity,
+                company_id=company_id
+            ))
 
-            # 4. Buscar o crear producto en destino
-            target_p = self.db.query(Product).filter(
+            # ── Buscar o crear producto en destino ───────────────────────────────
+            # Busca por barcode en la sucursal destino (mismo SKU = mismo barcode).
+            target_p = self.db._db.query(Product).filter(
                 Product.barcode == source_p.barcode,
                 Product.branch_id == data.to_branch_id,
+                Product.company_id == company_id,
                 Product.is_active == True
             ).first()
 
             if not target_p:
-                # Si no existe en destino, crear clon en el pasillo "Traslados" de destino
-                target_loc_id = self._get_or_create_traslados_location(data.to_branch_id)
+                # No existe → clonar automáticamente en el pasillo "Traslados" de destino
+                traslados_loc = self.db._db.query(StorageLocation).filter(
+                    StorageLocation.name == "Traslados",
+                    StorageLocation.branch_id == data.to_branch_id,
+                    StorageLocation.company_id == company_id
+                ).first()
+
+                if not traslados_loc:
+                    traslados_loc = StorageLocation(
+                        name="Traslados",
+                        path="Traslados",
+                        branch_id=data.to_branch_id,
+                        company_id=company_id,
+                        allows_multiple_products=True
+                    )
+                    self.db._db.add(traslados_loc)
+                    self.db._db.flush()
+
                 target_p = Product(
                     name=source_p.name,
                     barcode=source_p.barcode,
@@ -348,32 +408,34 @@ class InventoryService:
                     cost=source_p.cost,
                     uom=source_p.uom,
                     product_type=source_p.product_type,
-                    category_id=source_p.category_id, # Asumimos categorías globales o compartidas
+                    category_id=source_p.category_id,
                     image_path=source_p.image_path,
                     min_stock=source_p.min_stock,
                     branch_id=data.to_branch_id,
-                    location_id=target_loc_id,
-                    stock_quantity=0
+                    company_id=company_id,
+                    location_id=traslados_loc.id,
+                    stock_quantity=0,
+                    is_active=True
                 )
-                self.db.add(target_p)
-                self.db.flush()
+                self.db._db.add(target_p)
+                self.db._db.flush()
 
-            # 5. Sumar stock en destino
+            # ── Sumar stock en destino ───────────────────────────────────────────
             stock_before_entry = target_p.stock_quantity
             target_p.stock_quantity += item_req.quantity
-            
-            entry_item = InventoryMovementItem(
+
+            self.db._db.add(InventoryMovementItem(
                 movement_id=entry_movement.id,
                 product_id=target_p.id,
                 quantity=item_req.quantity,
                 stock_before=stock_before_entry,
-                stock_after=target_p.stock_quantity
-            )
-            self.db.add(entry_item)
+                stock_after=target_p.stock_quantity,
+                company_id=company_id
+            ))
 
         try:
             self.db.commit()
-            return exit_movement # Retornamos el de salida como referencia
+            return exit_movement
         except Exception as e:
             self.db.rollback()
-            raise e
+            raise HTTPException(status_code=500, detail=f"Error al procesar el traslado: {str(e)}")

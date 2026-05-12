@@ -52,6 +52,9 @@ class TenantSession:
     def flush(self):
         return self._db.flush()
 
+    def add_all(self, instances):
+        return self._db.add_all(instances)
+
     def delete(self, instance):
         return self._db.delete(instance)
 

@@ -1,8 +1,9 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+
 from typing import List, Optional
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.models.base import Customer, Vehicle, Ticket, SaleState, VehicleType
 from app.schemas.customers import CustomerCreate, CustomerUpdate, CustomerResponse, VehicleCreate, VehicleUpdate, VehicleResponse
 from sqlalchemy import func, desc
@@ -16,10 +17,10 @@ def get_customers(
     skip: int = 0, 
     limit: int = 100, 
     q: Optional[str] = None,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
-    query = db.query(Customer)
+    query = db.tenant_query(Customer)
     if q:
         query = query.filter(
             (Customer.name.ilike(f"%{q}%")) | 
@@ -30,11 +31,11 @@ def get_customers(
 @router.post("/", response_model=CustomerResponse)
 def create_customer(
     customer: CustomerCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
     # Check if RUT already exists
-    existing = db.query(Customer).filter(Customer.rut == customer.rut).first()
+    existing = db.tenant_query(Customer).filter(Customer.rut == customer.rut).first()
     if existing:
         raise HTTPException(status_code=400, detail="El RUT ya está registrado")
     
@@ -45,15 +46,15 @@ def create_customer(
     return db_customer
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-def get_customer(customer_id: UUID, db: Session = Depends(get_db_session)):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+def get_customer(customer_id: UUID, db: TenantSession = Depends(get_tenant_session)):
+    db_customer = db.tenant_query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return db_customer
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
-def update_customer(customer_id: UUID, customer: CustomerUpdate, db: Session = Depends(get_db_session)):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+def update_customer(customer_id: UUID, customer: CustomerUpdate, db: TenantSession = Depends(get_tenant_session)):
+    db_customer = db.tenant_query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
@@ -66,8 +67,8 @@ def update_customer(customer_id: UUID, customer: CustomerUpdate, db: Session = D
     return db_customer
 
 @router.delete("/{customer_id}")
-def delete_customer(customer_id: UUID, db: Session = Depends(get_db_session)):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+def delete_customer(customer_id: UUID, db: TenantSession = Depends(get_tenant_session)):
+    db_customer = db.tenant_query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
@@ -78,13 +79,13 @@ def delete_customer(customer_id: UUID, db: Session = Depends(get_db_session)):
 # --- Vehicles ---
 
 @router.post("/{customer_id}/vehicles", response_model=VehicleResponse)
-def add_vehicle(customer_id: UUID, vehicle: VehicleCreate, db: Session = Depends(get_db_session)):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+def add_vehicle(customer_id: UUID, vehicle: VehicleCreate, db: TenantSession = Depends(get_tenant_session)):
+    db_customer = db.tenant_query(Customer).filter(Customer.id == customer_id).first()
     if not db_customer:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
     # Check if plate already exists
-    existing = db.query(Vehicle).filter(Vehicle.license_plate == vehicle.license_plate).first()
+    existing = db.tenant_query(Vehicle).filter(Vehicle.license_plate == vehicle.license_plate).first()
     if existing:
         raise HTTPException(status_code=400, detail="La patente ya está registrada")
     
@@ -95,15 +96,15 @@ def add_vehicle(customer_id: UUID, vehicle: VehicleCreate, db: Session = Depends
     return db_vehicle
 
 @router.get("/vehicles/{vehicle_id}", response_model=VehicleResponse)
-def get_vehicle(vehicle_id: UUID, db: Session = Depends(get_db_session)):
-    db_vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def get_vehicle(vehicle_id: UUID, db: TenantSession = Depends(get_tenant_session)):
+    db_vehicle = db.tenant_query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not db_vehicle:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
     return db_vehicle
 
 @router.put("/vehicles/{vehicle_id}", response_model=VehicleResponse)
-def update_vehicle(vehicle_id: UUID, vehicle: VehicleUpdate, db: Session = Depends(get_db_session)):
-    db_vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def update_vehicle(vehicle_id: UUID, vehicle: VehicleUpdate, db: TenantSession = Depends(get_tenant_session)):
+    db_vehicle = db.tenant_query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not db_vehicle:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
     
@@ -116,8 +117,8 @@ def update_vehicle(vehicle_id: UUID, vehicle: VehicleUpdate, db: Session = Depen
     return db_vehicle
 
 @router.delete("/vehicles/{vehicle_id}")
-def delete_vehicle(vehicle_id: UUID, db: Session = Depends(get_db_session)):
-    db_vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def delete_vehicle(vehicle_id: UUID, db: TenantSession = Depends(get_tenant_session)):
+    db_vehicle = db.tenant_query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not db_vehicle:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
     
@@ -129,10 +130,10 @@ def delete_vehicle(vehicle_id: UUID, db: Session = Depends(get_db_session)):
 from app.models.base import WorkOrder, SaleItem, WorkOrderItem
 
 @router.get("/{customer_id}/history")
-def get_customer_history(customer_id: UUID, db: Session = Depends(get_db_session)):
+def get_customer_history(customer_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     # Get all tickets for this customer
     from sqlalchemy.orm import joinedload
-    tickets = db.query(Ticket).options(
+    tickets = db.tenant_query(Ticket).options(
         joinedload(Ticket.items).joinedload(SaleItem.product),
         joinedload(Ticket.vehicle),
         joinedload(Ticket.branch)
@@ -167,7 +168,7 @@ def get_customer_history(customer_id: UUID, db: Session = Depends(get_db_session
         })
     
     # Get Work Orders for this customer
-    work_orders = db.query(WorkOrder).options(
+    work_orders = db.tenant_query(WorkOrder).options(
         joinedload(WorkOrder.vehicle),
         joinedload(WorkOrder.items).joinedload(WorkOrderItem.product),
         joinedload(WorkOrder.tickets),
@@ -210,7 +211,7 @@ def get_customer_history(customer_id: UUID, db: Session = Depends(get_db_session
 
     # Get Quotes for this customer
     from app.models.base import Quote, QuoteItem
-    quotes = db.query(Quote).options(
+    quotes = db.tenant_query(Quote).options(
         joinedload(Quote.vehicle),
         joinedload(Quote.items).joinedload(QuoteItem.product),
         joinedload(Quote.branch)
@@ -238,7 +239,7 @@ def get_customer_history(customer_id: UUID, db: Session = Depends(get_db_session
         })
 
     # Simple KPIs
-    stats = db.query(
+    stats = db.tenant_query(
         func.count(Ticket.id),
         func.sum(Ticket.total_amount)
     ).filter(
@@ -263,7 +264,7 @@ def get_customer_history(customer_id: UUID, db: Session = Depends(get_db_session
 def get_vehicle_history_by_plate(
     license_plate: str,
     limit: int = Query(5, ge=1, le=50, description="Número de visitas a retornar"),
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
     """
@@ -275,7 +276,7 @@ def get_vehicle_history_by_plate(
     from app.models.base import WorkOrder, WorkOrderItem, SaleItem
 
     # Buscar el vehículo
-    vehicle = db.query(Vehicle).filter(
+    vehicle = db.tenant_query(Vehicle).filter(
         Vehicle.license_plate == license_plate.upper().strip()
     ).first()
 
@@ -285,7 +286,7 @@ def get_vehicle_history_by_plate(
     customer = vehicle.owner
 
     # Últimas N ventas directas del vehículo
-    tickets = db.query(Ticket).options(
+    tickets = db.tenant_query(Ticket).options(
         joinedload(Ticket.items).joinedload(SaleItem.product)
     ).filter(
         Ticket.vehicle_id == vehicle.id,
@@ -310,7 +311,7 @@ def get_vehicle_history_by_plate(
         })
 
     # Últimas N OTs del vehículo
-    ots = db.query(WorkOrder).options(
+    ots = db.tenant_query(WorkOrder).options(
         joinedload(WorkOrder.items).joinedload(WorkOrderItem.product)
     ).filter(
         WorkOrder.vehicle_id == vehicle.id,
@@ -367,7 +368,7 @@ class QuickCreatePayload(BaseModel):
 @router.post("/quick-create")
 def quick_create_customer_vehicle(
     payload: QuickCreatePayload,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
     """
@@ -378,7 +379,7 @@ def quick_create_customer_vehicle(
     plate = payload.license_plate.upper().strip()
 
     # Si ya existe la patente, retornar el vehículo y su dueño
-    existing_vehicle = db.query(Vehicle).filter(Vehicle.license_plate == plate).first()
+    existing_vehicle = db.tenant_query(Vehicle).filter(Vehicle.license_plate == plate).first()
     if existing_vehicle:
         return {
             "created": False,
@@ -406,7 +407,7 @@ def quick_create_customer_vehicle(
     rut_temp = f"PLACA-{plate}"
 
     # Crear cliente (verificar si ya existe por nombre+contacto)
-    customer = db.query(Customer).filter(
+    customer = db.tenant_query(Customer).filter(
         Customer.rut == rut_temp
     ).first()
 

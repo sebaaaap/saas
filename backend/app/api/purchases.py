@@ -1,7 +1,8 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Header
-from sqlalchemy.orm import Session
-from app.database import get_db_session
+
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.schemas.purchases import PurchaseCreate, PurchaseResponse, PurchaseUpdate, PurchaseItemResponse
 from app.services.purchase_service import PurchaseService
 from app.api.deps import check_roles
@@ -12,7 +13,7 @@ router = APIRouter()
 @router.post("/", response_model=PurchaseResponse)
 def create_purchase(
     data: PurchaseCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
@@ -54,7 +55,7 @@ def create_purchase(
 @router.post("/upload-sii")
 async def upload_sii_excel(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """
@@ -142,7 +143,7 @@ async def upload_sii_excel(
         if not rut or rut == "nan" or rut in supplier_id_by_rut:
             continue
 
-        existing = db.query(Supplier).filter(Supplier.tax_id == rut).first()
+        existing = db.tenant_query(Supplier).filter(Supplier.tax_id == rut).first()
         if existing:
             supplier_id_by_rut[rut] = str(existing.id)
         else:
@@ -162,7 +163,7 @@ async def upload_sii_excel(
     all_folios = [inv["invoice_number"] for inv in invoices if inv["invoice_number"] not in ("", "nan")]
 
     existing_purchases = (
-        db.query(Purchase.invoice_number)
+        db.tenant_query(Purchase.invoice_number)
         .filter(Purchase.invoice_number.in_(all_folios))
         .filter(Purchase.state != PurchaseState.CANCELLED)
         .all()
@@ -201,7 +202,7 @@ async def upload_sii_excel(
 
 def list_purchases(
     state: Optional[str] = Query(None, description="Filtrar por estado: DRAFT, CONFIRMED, CANCELLED"),
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """
@@ -240,7 +241,7 @@ def list_purchases(
 @router.get("/{purchase_id}", response_model=PurchaseResponse)
 def get_purchase(
     purchase_id: UUID, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """
@@ -275,7 +276,7 @@ def get_purchase(
 @router.post("/{purchase_id}/confirm", response_model=PurchaseResponse)
 def confirm_purchase(
     purchase_id: UUID, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
     """
@@ -314,7 +315,7 @@ def confirm_purchase(
 @router.post("/{purchase_id}/cancel", response_model=PurchaseResponse)
 def cancel_purchase(
     purchase_id: UUID, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
     """
@@ -350,7 +351,7 @@ def cancel_purchase(
 def update_purchase(
     purchase_id: UUID, 
     data: PurchaseUpdate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """

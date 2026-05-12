@@ -1,13 +1,13 @@
 from uuid import UUID
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_user, get_tenant_session
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.models.base import User, UserRole
 from app.schemas.auth import UserCreate, UserUpdate, UserResponse
 from app.core import security
-from app.db.tenant_session import TenantSession
 
 router = APIRouter()
 

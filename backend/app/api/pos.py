@@ -8,10 +8,11 @@ Implementa el flujo completo de ventas con soporte para:
 - Búsqueda de productos
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+
 from typing import List, Optional
 
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.services.pos_service import POSService
 from app.schemas.pos import (
     ProductResponse, 
@@ -32,14 +33,14 @@ router = APIRouter()
 @router.get("/products/barcode/{barcode}", response_model=ProductResponse)
 def get_product_by_barcode(
     barcode: str, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor", "inventario"]))
 ):
     """
     Busca un producto por código de barras
     Ideal para llamar automáticamente cuando el escáner envía 'Enter'
     """
-    product = db.query(Product).filter(Product.barcode == barcode).first()
+    product = db.tenant_query(Product).filter(Product.barcode == barcode).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     return product
@@ -50,14 +51,14 @@ def search_products(
     category: Optional[str] = Query(None, description="Filtrar por categoría"),
     skip: int = 0,
     limit: int = 50,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor", "inventario"]))
 ):
     """
     Búsqueda de productos con filtros
     Soporta búsqueda por nombre, SKU, categoría
     """
-    query = db.query(Product).filter(Product.is_active == True)
+    query = db.tenant_query(Product).filter(Product.is_active == True)
     
     if search:
         search_filter = f"%{search}%"
@@ -77,7 +78,7 @@ def search_products(
 @router.post("/sales", response_model=SaleResponse, status_code=201)
 def create_sale(
     sale: SaleCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     active_session = Depends(require_active_session)
 ):
     """
@@ -126,7 +127,7 @@ def create_sale(
 @router.post("/sales/quick", response_model=SaleResponse, status_code=201)
 def create_quick_sale(
     sale: QuickSaleCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     active_session = Depends(require_active_session)
 ):
     """
@@ -156,7 +157,7 @@ def create_quick_sale(
     return jsonable_encoder(SaleResponse.model_validate(ticket))
 
 @router.post("/sales/{ticket_id}/validate", response_model=SaleResponse)
-def validate_sale(ticket_id: UUID, db: Session = Depends(get_db_session)):
+def validate_sale(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     """
     Valida una venta: DRAFT -> VALIDATED
     Ajusta el inventario de forma atómica
@@ -166,7 +167,7 @@ def validate_sale(ticket_id: UUID, db: Session = Depends(get_db_session)):
     return ticket
 
 @router.post("/sales/{ticket_id}/pay", response_model=SaleResponse)
-def mark_sale_as_paid(ticket_id: UUID, db: Session = Depends(get_db_session)):
+def mark_sale_as_paid(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     """
     Marca una venta como pagada: VALIDATED -> PAID
     """
@@ -174,7 +175,7 @@ def mark_sale_as_paid(ticket_id: UUID, db: Session = Depends(get_db_session)):
     return ticket
 
 @router.get("/sales/{ticket_id}", response_model=SaleResponse)
-def get_sale(ticket_id: UUID, db: Session = Depends(get_db_session)):
+def get_sale(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     """Obtiene una venta por ID"""
     ticket = POSService.get_sale_by_id(db, ticket_id)
     if not ticket:
@@ -182,7 +183,7 @@ def get_sale(ticket_id: UUID, db: Session = Depends(get_db_session)):
     return ticket
 
 @router.get("/sales/session/{session_id}", response_model=List[SaleResponse])
-def get_sales_by_session(session_id: UUID, db: Session = Depends(get_db_session)):
+def get_sales_by_session(session_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     """Obtiene todas las ventas de una sesión"""
     tickets = POSService.get_sales_by_session(db, session_id)
     return tickets
@@ -190,7 +191,7 @@ def get_sales_by_session(session_id: UUID, db: Session = Depends(get_db_session)
 # --- Refund Endpoints ---
 
 @router.post("/refunds", response_model=RefundResponse, status_code=201)
-def create_refund(refund: RefundCreate, db: Session = Depends(get_db_session)):
+def create_refund(refund: RefundCreate, db: TenantSession = Depends(get_tenant_session)):
     """
     Crea una nota de crédito (reembolso)
     NO borra la venta original, crea una venta negativa vinculada

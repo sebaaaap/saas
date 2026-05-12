@@ -1,11 +1,12 @@
 from decimal import Decimal
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Header
-from sqlalchemy.orm import Session
+
 from sqlalchemy import func, case, desc, extract
 from typing import List, Optional
 from datetime import datetime, timedelta
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.models.base import (
     Product, ProductCategory, StorageLocation, Branch,
     Ticket, SaleItem, SaleState, Payment, PaymentMethod,
@@ -40,7 +41,7 @@ def get_sales_summary(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     branch_id: Optional[UUID] = Query(None, alias="branch_id"),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     start_dt = parse_date(start_date) or datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     end_dt = parse_date(end_date) or datetime.utcnow()
@@ -50,7 +51,7 @@ def get_sales_summary(
     # Base query: incluir VALIDATED y PAID (ambos estados son ventas realizadas)
     VALID_STATES = [SaleState.VALIDATED, SaleState.PAID]
 
-    query = db.query(Ticket).filter(
+    query = db.tenant_query(Ticket).filter(
         Ticket.date_created >= start_date,
         Ticket.date_created <= end_date,
         Ticket.state.in_(VALID_STATES),
@@ -67,7 +68,7 @@ def get_sales_summary(
     avg_ticket = gross_sales / total_tickets if total_tickets > 0 else Decimal('0.00')
 
     # 3. Digital Payments (Card + Transfer)
-    digital_q = db.query(func.sum(Payment.amount)).join(Ticket).filter(
+    digital_q = db.tenant_query(func.sum(Payment.amount)).join(Ticket).filter(
         Ticket.date_created >= start_date,
         Ticket.date_created <= end_date,
         Ticket.state.in_(VALID_STATES),
@@ -96,7 +97,7 @@ def get_sales_summary(
     # 4b. Sales by Day + Ganancia bruta por día (ventas - costo)
     # Obtenemos items de venta en el rango para calcular costo
     items_q = (
-        db.query(SaleItem)
+        db.tenant_query(SaleItem)
         .join(Ticket)
         .filter(
             Ticket.date_created >= start_date,
@@ -140,7 +141,7 @@ def get_sales_summary(
 
     # 5. Recent Transactions — ordenar por date_created (campo correcto del modelo)
     # Cargar mapa de sucursales para mostrar nombre
-    branches_map = {b.id: b.name for b in db.query(Branch).all()}
+    branches_map = {b.id: b.name for b in db.tenant_query(Branch).all()}
     
     transactions = query.order_by(desc(Ticket.date_created)).limit(10).all()
     trans_list = []
@@ -189,7 +190,7 @@ def get_profitability(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     branch_id: Optional[UUID] = Query(None, alias="branch_id"),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     start_dt = parse_date(start_date) or datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_dt = parse_date(end_date) or datetime.utcnow()
@@ -198,7 +199,7 @@ def get_profitability(
 
     VALID_STATES = [SaleState.VALIDATED, SaleState.PAID]
 
-    items_q = db.query(SaleItem).join(Ticket).filter(
+    items_q = db.tenant_query(SaleItem).join(Ticket).filter(
         Ticket.date_created >= start_date,
         Ticket.date_created <= end_date,
         Ticket.state.in_(VALID_STATES),
@@ -301,10 +302,10 @@ def get_profitability(
     }
 
 @router.get("/sales/cash_reports")
-def get_cash_reports(db: Session = Depends(get_db_session)):
+def get_cash_reports(db: TenantSession = Depends(get_tenant_session)):
     # Usar los campos REALES del modelo CashSession:
     # opened_at, closed_at, opening_balance, closing_balance, status, user_id, cash_register
-    sessions_db = db.query(CashSession).order_by(desc(CashSession.opened_at)).limit(10).all()
+    sessions_db = db.tenant_query(CashSession).order_by(desc(CashSession.opened_at)).limit(10).all()
     
     data = []
     total_diff = Decimal('0')
@@ -357,10 +358,10 @@ def get_inventory_summary(
     aisle: Optional[str] = None,
     category: Optional[str] = None,
     branch_id: Optional[UUID] = Query(None, alias="branch_id"),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     # Query Products (Excluyendo SERVICIOS)
-    q = db.query(Product).filter(
+    q = db.tenant_query(Product).filter(
         Product.is_active == True,
         Product.product_type != ProductType.SERVICE
     )
@@ -433,14 +434,14 @@ def get_purchases_summary(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     branch_id: Optional[UUID] = Query(None, alias="branch_id"),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     start_dt = parse_date(start_date) or datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_dt = parse_date(end_date) or datetime.utcnow()
     start_date = start_dt
     end_date = end_dt
     
-    purchases_q = db.query(Purchase).filter(
+    purchases_q = db.tenant_query(Purchase).filter(
         Purchase.state == PurchaseState.CONFIRMED,
         Purchase.date_created >= start_date,
         Purchase.date_created <= end_date
@@ -451,11 +452,11 @@ def get_purchases_summary(
     total_invested = sum(p.total_cost or Decimal('0') for p in purchases_q.all())
     
     # Pendientes
-    pending_count = db.query(Purchase).filter(Purchase.state == PurchaseState.DRAFT).count()
+    pending_count = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.DRAFT).count()
     
     # Top Supplier
     suppliers_vol = {}
-    all_confirmed = db.query(Purchase).filter(Purchase.state == PurchaseState.CONFIRMED).all()
+    all_confirmed = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.CONFIRMED).all()
     for p in all_confirmed:
         s_name = p.supplier.name if p.supplier else "Desconocido"
         suppliers_vol[s_name] = suppliers_vol.get(s_name, Decimal('0')) + (p.total_cost or Decimal('0'))
@@ -469,7 +470,7 @@ def get_purchases_summary(
     chart_data = [{"name": s[0], "volume": float(s[1])} for s in sorted_suppliers[:5]]
     
     # Movimientos recientes
-    recent_items = db.query(PurchaseItem).join(Purchase).order_by(desc(Purchase.date_created)).limit(20).all()
+    recent_items = db.tenant_query(PurchaseItem).join(Purchase).order_by(desc(Purchase.date_created)).limit(20).all()
     movements = []
     for item in recent_items:
         movements.append({
@@ -498,7 +499,7 @@ def export_sales_excel(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     branch_id: Optional[UUID] = Query(None, alias="branch_id"),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Genera un Excel de ventas con 3 hojas:
@@ -518,7 +519,7 @@ def export_sales_excel(
     VALID_STATES = [SaleState.VALIDATED, SaleState.PAID]
 
     tickets_q = (
-        db.query(Ticket)
+        db.tenant_query(Ticket)
         .filter(
             Ticket.date_created >= start_dt,
             Ticket.date_created <= end_dt,
@@ -532,11 +533,11 @@ def export_sales_excel(
     tickets = tickets_q.all()
     
     # Precargar sucursales para el Excel
-    branches_map = {b.id: b.name for b in db.query(Branch).all()}
+    branches_map = {b.id: b.name for b in db.tenant_query(Branch).all()}
     
     # Cargar Gastos del período
     expenses_q = (
-        db.query(Expense)
+        db.tenant_query(Expense)
         .join(Expense.session)
         .filter(
             CashSession.opened_at >= start_dt,
@@ -550,7 +551,7 @@ def export_sales_excel(
     expenses = expenses_q.all()
     
     # Mapa catálogo de categorías de gasto
-    exp_cats = {str(c.id): c.name for c in db.query(ExpenseCategory).all()}
+    exp_cats = {str(c.id): c.name for c in db.tenant_query(ExpenseCategory).all()}
 
     # ── Helpers de estilo ────────────────────────────────────────────────────
     HEADER_FILL   = PatternFill("solid", fgColor="1A1A2E")   # Azul oscuro
@@ -864,7 +865,7 @@ def export_sales_excel(
 def export_inventory_excel(
     category: Optional[str] = None,
     aisle: Optional[str] = None,
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Genera un Excel del estado actual del inventario.
@@ -876,7 +877,7 @@ def export_inventory_excel(
     from openpyxl.utils import get_column_letter
     from fastapi.responses import StreamingResponse
 
-    q = db.query(Product).join(ProductCategory, isouter=True).join(StorageLocation, isouter=True)
+    q = db.tenant_query(Product).join(ProductCategory, isouter=True).join(StorageLocation, isouter=True)
     if category and category != "all":
         q = q.filter(ProductCategory.name == category)
     if aisle:
@@ -985,7 +986,7 @@ def export_inventory_excel(
 def export_purchases_excel(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Genera un Excel de compras con 2 hojas:
@@ -1002,7 +1003,7 @@ def export_purchases_excel(
     end_dt   = parse_date(end_date)   or datetime.utcnow()
 
     purchases = (
-        db.query(Purchase)
+        db.tenant_query(Purchase)
         .filter(
             Purchase.date_created >= start_dt,
             Purchase.date_created <= end_dt,

@@ -407,25 +407,26 @@ def update_product(
         # Nota: El modal actual manda todo, así que update_data tendrá location_id y stock.
         # Asumimos que si se edita desde el modal, se está editando la instancia "principal" o seleccionada.
         if 'location_id' in update_data:
-             loc = db.tenant_query(StorageLocation).filter(
-                 StorageLocation.id == update_data['location_id']
-             ).first()
-             if not loc:
-                 raise HTTPException(status_code=400, detail="Ubicación no válida")
-             
-             if not loc.allows_multiple_products:
-                 occupant = db.tenant_query(Product).filter(
-                     Product.location_id == loc.id,
-                     Product.barcode != db_product.barcode,
-                     Product.is_active == True,
-                     Product.stock_quantity > 0
+             if update_data['location_id'] is not None:
+                 loc = db.tenant_query(StorageLocation).filter(
+                     StorageLocation.id == update_data['location_id']
                  ).first()
+                 if not loc:
+                     raise HTTPException(status_code=400, detail="Ubicación no válida")
                  
-                 if occupant:
-                     raise HTTPException(
-                         status_code=400, 
-                         detail=f"La ubicación '{loc.name}' es de producto único y ya está ocupada por '{occupant.name}'. No se puede mover este producto aquí."
-                     )
+                 if not loc.allows_multiple_products:
+                     occupant = db.tenant_query(Product).filter(
+                         Product.location_id == loc.id,
+                         Product.barcode != db_product.barcode,
+                         Product.is_active == True,
+                         Product.stock_quantity > 0
+                     ).first()
+                     
+                     if occupant:
+                         raise HTTPException(
+                             status_code=400, 
+                             detail=f"La ubicación '{loc.name}' es de producto único y ya está ocupada por '{occupant.name}'. No se puede mover este producto aquí."
+                         )
              
              db_product.location_id = update_data['location_id']
              

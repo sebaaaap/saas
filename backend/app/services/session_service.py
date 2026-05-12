@@ -3,7 +3,7 @@ from decimal import Decimal
 Servicio de Sesiones de Caja
 Maneja apertura, cierre y arqueo de caja
 """
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from datetime import datetime
 from typing import List, Optional, Union
 from fastapi import HTTPException
@@ -17,7 +17,7 @@ class SessionService:
     
     # --- Cash Register Methods ---
     @staticmethod
-    def create_register(db: Session, data: CashRegisterCreate) -> CashRegister:
+    def create_register(db: TenantSession, data: CashRegisterCreate) -> CashRegister:
         register = CashRegister(**data.model_dump())
         db.add(register)
         db.commit()
@@ -25,8 +25,8 @@ class SessionService:
         return register
 
     @staticmethod
-    def update_register(db: Session, register_id: UUID, data: CashRegisterCreate) -> CashRegister:
-        register = db.query(CashRegister).filter(CashRegister.id == register_id).first()
+    def update_register(db: TenantSession, register_id: UUID, data: CashRegisterCreate) -> CashRegister:
+        register = db.tenant_query(CashRegister).filter(CashRegister.id == register_id).first()
         if not register:
             raise HTTPException(status_code=404, detail="Caja no encontrada")
         
@@ -38,8 +38,8 @@ class SessionService:
         return register
 
     @staticmethod
-    def delete_register(db: Session, register_id: UUID) -> bool:
-        register = db.query(CashRegister).filter(CashRegister.id == register_id).first()
+    def delete_register(db: TenantSession, register_id: UUID) -> bool:
+        register = db.tenant_query(CashRegister).filter(CashRegister.id == register_id).first()
         if not register:
             raise HTTPException(status_code=404, detail="Caja no encontrada")
         
@@ -49,8 +49,8 @@ class SessionService:
         return True
 
     @staticmethod
-    def list_registers(db: Session, active_only: bool = True, branch_id: Optional[UUID] = None) -> List[CashRegister]:
-        query = db.query(CashRegister)
+    def list_registers(db: TenantSession, active_only: bool = True, branch_id: Optional[UUID] = None) -> List[CashRegister]:
+        query = db.tenant_query(CashRegister)
         if active_only:
             query = query.filter(CashRegister.is_active == True)
         if branch_id:
@@ -58,11 +58,11 @@ class SessionService:
         return query.all()
 
     @staticmethod
-    def get_available_registers(db: Session, branch_id: Optional[UUID] = None) -> List[CashRegister]:
+    def get_available_registers(db: TenantSession, branch_id: Optional[UUID] = None) -> List[CashRegister]:
         """Listar cajas que no tienen una sesión abierta actualmente"""
-        active_sessions = db.query(CashSession.cash_register_id).filter(CashSession.status == "open").all()
+        active_sessions = db.tenant_query(CashSession.cash_register_id).filter(CashSession.status == "open").all()
         occupied_ids = [s[0] for s in active_sessions]
-        query = db.query(CashRegister).filter(
+        query = db.tenant_query(CashRegister).filter(
             CashRegister.is_active == True,
             ~CashRegister.id.in_(occupied_ids)
         )
@@ -72,12 +72,12 @@ class SessionService:
 
     # --- Session Methods ---
     @staticmethod
-    def open_session(db: Session, session_data: CashSessionCreate) -> CashSession:
+    def open_session(db: TenantSession, session_data: CashSessionCreate) -> CashSession:
         """
         Abre una nueva sesión de caja vinculada a una terminal física.
         """
         # 1. Verificar si el usuario ya tiene una sesión abierta
-        existing_user_session = db.query(CashSession).filter(
+        existing_user_session = db.tenant_query(CashSession).filter(
             CashSession.user_id == session_data.user_id,
             CashSession.status == "open"
         ).first()
@@ -89,7 +89,7 @@ class SessionService:
             )
         
         # 2. Verificar si la caja ya está ocupada
-        existing_register_session = db.query(CashSession).filter(
+        existing_register_session = db.tenant_query(CashSession).filter(
             CashSession.cash_register_id == session_data.cash_register_id,
             CashSession.status == "open"
         ).first()
@@ -117,11 +117,11 @@ class SessionService:
         return session
     
     @staticmethod
-    def close_session(db: Session, session_id: UUID, close_data: CashSessionClose) -> CashSession:
+    def close_session(db: TenantSession, session_id: UUID, close_data: CashSessionClose) -> CashSession:
         """
         Cierra una sesión de caja y realiza el arqueo.
         """
-        session = db.query(CashSession).filter(CashSession.id == session_id).first()
+        session = db.tenant_query(CashSession).filter(CashSession.id == session_id).first()
         if not session:
             raise HTTPException(status_code=404, detail="Sesión no encontrada")
         if session.status == "closed":
@@ -133,7 +133,7 @@ class SessionService:
         session.total_sales_card = Decimal('0.00')
         session.total_sales_transfer = Decimal('0.00')
         
-        session_tickets = db.query(Ticket).filter(
+        session_tickets = db.tenant_query(Ticket).filter(
             Ticket.session_id == session_id,
             Ticket.state.in_([SaleState.VALIDATED, SaleState.PAID, SaleState.REFUNDED])
         ).all()
@@ -149,7 +149,7 @@ class SessionService:
                     session.total_sales_transfer += p.amount
         
         # 2. Sumar y descontar Gastos (Expenses)
-        session_expenses = db.query(Expense).filter(Expense.session_id == session_id).all()
+        session_expenses = db.tenant_query(Expense).filter(Expense.session_id == session_id).all()
         total_expenses_cash = Decimal('0.00')
         
         for exp in session_expenses:
@@ -173,9 +173,9 @@ class SessionService:
         return session
     
     @staticmethod
-    def get_open_session(db: Session, user_id: Optional[str] = None, branch_id: Optional[UUID] = None) -> Optional[CashSession]:
+    def get_open_session(db: TenantSession, user_id: Optional[str] = None, branch_id: Optional[UUID] = None) -> Optional[CashSession]:
         """Obtiene la sesión abierta actual, filtrada opcionalmente por sucursal"""
-        query = db.query(CashSession).filter(CashSession.status == "open")
+        query = db.tenant_query(CashSession).filter(CashSession.status == "open")
         if user_id:
             query = query.filter(CashSession.user_id == user_id)
         if branch_id:
@@ -183,9 +183,9 @@ class SessionService:
         return query.first()
     
     @staticmethod
-    def get_session_by_id(db: Session, session_id: UUID) -> Optional[CashSession]:
-        return db.query(CashSession).filter(CashSession.id == session_id).first()
+    def get_session_by_id(db: TenantSession, session_id: UUID) -> Optional[CashSession]:
+        return db.tenant_query(CashSession).filter(CashSession.id == session_id).first()
     
     @staticmethod
-    def get_all_sessions(db: Session, skip: int = 0, limit: int = 100) -> List[CashSession]:
-        return db.query(CashSession).order_by(CashSession.opened_at.desc()).offset(skip).limit(limit).all()
+    def get_all_sessions(db: TenantSession, skip: int = 0, limit: int = 100) -> List[CashSession]:
+        return db.tenant_query(CashSession).order_by(CashSession.opened_at.desc()).offset(skip).limit(limit).all()

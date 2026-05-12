@@ -1,18 +1,18 @@
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from app.models.base import StorageLocation, Product
 from app.schemas.locations import LocationCreate
 from fastapi import HTTPException
 from uuid import UUID
 
 class LocationService:
-    def __init__(self, db: Session):
+    def __init__(self, db: TenantSession):
         self.db = db
 
     def create_location(self, data: LocationCreate, branch_id: UUID = None) -> StorageLocation:
         # Calcular path
         path = data.name
         if data.parent_id:
-            parent = self.db.query(StorageLocation).filter(StorageLocation.id == data.parent_id).first()
+            parent = self.db.tenant_query(StorageLocation).filter(StorageLocation.id == data.parent_id).first()
             if not parent:
                 raise HTTPException(status_code=404, detail="Ubicación padre no encontrada")
             path = f"{parent.path}/{data.name}"
@@ -48,7 +48,7 @@ class LocationService:
                 name = f"{zone_prefix}-{col:02d}-{side}{lvl}"
                 
                 # Evitar duplicados si ya existe
-                query = self.db.query(StorageLocation).filter(StorageLocation.name == name)
+                query = self.db.tenant_query(StorageLocation).filter(StorageLocation.name == name)
                 if branch_id:
                     query = query.filter(StorageLocation.branch_id == branch_id)
                 existing = query.first()
@@ -74,25 +74,25 @@ class LocationService:
     def get_tree(self, branch_id: UUID = None):
         # Para la matriz, quizás prefieramos una lista plana o agrupada por zona.
         # Por ahora mantenemos compatibilidad con el árbol.
-        query = self.db.query(StorageLocation).filter(StorageLocation.parent_id == None)
+        query = self.db.tenant_query(StorageLocation).filter(StorageLocation.parent_id == None)
         if branch_id:
             query = query.filter(StorageLocation.branch_id == branch_id)
         return query.all()
 
     def delete_location(self, location_id: int):
-        location = self.db.query(StorageLocation).filter(StorageLocation.id == location_id).first()
+        location = self.db.tenant_query(StorageLocation).filter(StorageLocation.id == location_id).first()
         if not location:
             raise HTTPException(status_code=404, detail="Ubicación no encontrada")
 
         # IDs de la ubicación y todos sus descendientes usando el path
-        descendants = self.db.query(StorageLocation).filter(
+        descendants = self.db.tenant_query(StorageLocation).filter(
             StorageLocation.path.like(f"{location.path}/%")
         ).all()
         
         all_ids = [location.id] + [d.id for d in descendants]
 
         # Verificar si hay productos en estas ubicaciones
-        products_count = self.db.query(Product).filter(Product.location_id.in_(all_ids)).count()
+        products_count = self.db.tenant_query(Product).filter(Product.location_id.in_(all_ids)).count()
         if products_count > 0:
             raise HTTPException(
                 status_code=400, 
@@ -101,7 +101,7 @@ class LocationService:
 
         # Eliminar todas las ubicaciones (descendientes + la actual)
         try:
-            self.db.query(StorageLocation).filter(StorageLocation.id.in_(all_ids)).delete(synchronize_session=False)
+            self.db.tenant_query(StorageLocation).filter(StorageLocation.id.in_(all_ids)).delete(synchronize_session=False)
             self.db.commit()
             return {"message": "Ubicación y sub-ubicaciones eliminadas correctamente"}
         except Exception as e:

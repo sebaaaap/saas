@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.services.location_service import LocationService
 from app.services.inventory_service import InventoryService
 from typing import List, Optional
@@ -14,7 +14,7 @@ router = APIRouter()
 @router.post("/", response_model=LocationResponse)
 def create_location(
     data: LocationCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     service = LocationService(db)
@@ -25,7 +25,7 @@ from app.schemas.inventory import InventoryMovementItemCreate, InventoryMovement
 @router.post("/mermas/restore", response_model=InventoryMovementResponse)
 def restore_mermas_product(
     item: InventoryMovementItemCreate,
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Restaura un producto del Pasillo Mermas al Pasillo Stock.
@@ -38,7 +38,7 @@ def restore_mermas_product(
 @router.post("/generate", response_model=List[LocationResponse])
 def generate_aisle(
     data: AisleGenerate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     service = LocationService(db)
@@ -46,7 +46,7 @@ def generate_aisle(
 
 @router.get("/tree", response_model=List[LocationResponse])
 def get_location_tree(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     service = LocationService(db)
@@ -54,7 +54,7 @@ def get_location_tree(
 
 @router.get("/available", response_model=List[LocationResponse])
 def get_available_locations(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     """
@@ -64,7 +64,7 @@ def get_available_locations(
     3. Que acepten múltiples productos aunque tengan stock.
     """
     # Excluir pasillo de mermas
-    query = db.query(StorageLocation).filter(StorageLocation.name != "Pasillo Mermas")
+    query = db.tenant_query(StorageLocation).filter(StorageLocation.name != "Pasillo Mermas")
     
     if branch_id:
         query = query.filter(StorageLocation.branch_id == branch_id)
@@ -73,7 +73,7 @@ def get_available_locations(
     all_locs = query.all()
     
     # Obtener ocupación actual
-    occupancy_query = db.query(Product.location_id).filter(
+    occupancy_query = db.tenant_query(Product.location_id).filter(
         Product.location_id != None,
         Product.is_active == True,
         Product.stock_quantity > 0
@@ -98,14 +98,14 @@ def get_available_locations(
 @router.get("/{location_id}/products")
 def get_products_in_location(
     location_id: UUID, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     """
     Devuelve los productos asignados a una ubicación específica
     """
     # Filter by location and active status
-    query = db.query(Product).filter(
+    query = db.tenant_query(Product).filter(
         Product.location_id == location_id,
         Product.is_active == True
     )
@@ -132,14 +132,14 @@ def delete_product_from_location(
     location_id: UUID, 
     product_id: UUID, 
     quantity: float = None,
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Elimina un producto de una ubicación (Stock Disposal / Merma)
     Si quantity es None, elimina todo el stock disponible.
     """
     # Verificar que el producto existe en esa ubicación
-    product = db.query(Product).filter(
+    product = db.tenant_query(Product).filter(
         Product.id == product_id,
         Product.location_id == location_id
     ).first()
@@ -186,6 +186,6 @@ def delete_product_from_location(
     return s_inventory.create_movement(movement_data)
 
 @router.delete("/{location_id}")
-def delete_location(location_id: UUID, db: Session = Depends(get_db_session)):
+def delete_location(location_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     service = LocationService(db)
     return service.delete_location(location_id)

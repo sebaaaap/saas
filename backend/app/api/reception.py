@@ -11,12 +11,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy.orm import Session
+
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
 from pydantic import BaseModel
 
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.models.base import WorkOrder, Base, BaseModel as DBBaseModel
 
 router = APIRouter()
@@ -77,13 +78,13 @@ class ReceptionFormSchema(BaseModel):
 def save_reception(
     wo_id: str,
     form: ReceptionFormSchema,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
 ):
     """
     Guarda la ficha de recepción en el campo JSONB `reception_data` de la OT.
     Si el modelo aún no tiene ese campo, lo almacena en `service_info`.
     """
-    wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
+    wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
 
@@ -101,10 +102,10 @@ def save_reception(
 @router.get("/{wo_id}/reception")
 def get_reception(
     wo_id: str,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
 ):
     """Recupera la ficha de recepción de una OT."""
-    wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
+    wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
 
@@ -152,7 +153,7 @@ async def upload_photo(
 async def export_reception_pdf(
     wo_id: str,
     form: ReceptionFormSchema,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
 ):
     """
     Genera un PDF de la ficha de recepción.
@@ -192,7 +193,7 @@ async def export_reception_pdf(
         story = []
 
         # ── Fetch OT Data ──
-        wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
+        wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).first()
         cliente_nombre = "—"
         cliente_rut = "—"
         vehiculo_info = "—"

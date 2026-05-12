@@ -1,10 +1,10 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+
 from typing import List, Optional
 from pydantic import BaseModel
 
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
 from app.db.tenant_session import TenantSession
 from app.models.base import PaymentMethodConfig
 from app.api.deps import check_roles, get_tenant_session

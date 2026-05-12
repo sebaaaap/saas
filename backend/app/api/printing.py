@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from app.database import get_db_session
+
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.services.printing_service import PrintingService
 from app.api.deps import check_roles
 from uuid import UUID
@@ -10,13 +11,13 @@ router = APIRouter()
 @router.post("/ticket/{ticket_id}")
 def print_ticket(
     ticket_id: int, 
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Imprime un ticket de venta en la impresora de 80mm.
     """
     from app.models.base import Ticket
-    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    ticket = db.tenant_query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
         
@@ -31,13 +32,13 @@ def print_oil_label(
     vehicle_id: UUID,
     km_now: float = Query(0),
     km_next: float = Query(0),
-    db: Session = Depends(get_db_session)
+    db: TenantSession = Depends(get_tenant_session)
 ):
     """
     Imprime la etiqueta adhesiva para el cambio de aceite.
     """
     from app.models.base import Vehicle
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    vehicle = db.tenant_query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
         

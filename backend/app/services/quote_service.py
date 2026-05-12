@@ -1,4 +1,5 @@
-from sqlalchemy.orm import Session, joinedload
+from app.db.tenant_session import TenantSession
+from sqlalchemy.orm import joinedload
 from sqlalchemy import and_, or_
 from datetime import datetime
 from fastapi import HTTPException
@@ -19,7 +20,7 @@ from app.services.pos_service import POSService
 class QuoteWorkOrderService:
 
     @staticmethod
-    def create_quote(db: Session, quote_data: QuoteCreate) -> Quote:
+    def create_quote(db: TenantSession, quote_data: QuoteCreate) -> Quote:
         total = Decimal('0')
         
         quote = Quote(
@@ -58,12 +59,12 @@ class QuoteWorkOrderService:
         return quote
 
     @staticmethod
-    def get_quotes(db: Session) -> List[Quote]:
-        return db.query(Quote).order_by(Quote.created_at.desc()).all()
+    def get_quotes(db: TenantSession) -> List[Quote]:
+        return db.tenant_query(Quote).order_by(Quote.created_at.desc()).all()
 
     @staticmethod
-    def reject_quote(db: Session, quote_id: UUID) -> Quote:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    def reject_quote(db: TenantSession, quote_id: UUID) -> Quote:
+        quote = db.tenant_query(Quote).filter(Quote.id == quote_id).first()
         if not quote:
             raise HTTPException(status_code=404, detail="Cotización no encontrada")
         
@@ -76,8 +77,8 @@ class QuoteWorkOrderService:
         return quote
 
     @staticmethod
-    def approve_quote(db: Session, quote_id: UUID) -> tuple[Quote, WorkOrder]:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    def approve_quote(db: TenantSession, quote_id: UUID) -> tuple[Quote, WorkOrder]:
+        quote = db.tenant_query(Quote).filter(Quote.id == quote_id).first()
         if not quote:
             raise HTTPException(status_code=404, detail="Cotización no encontrada")
             
@@ -124,7 +125,7 @@ class QuoteWorkOrderService:
             raise HTTPException(status_code=500, detail="Error al aprobar cotización y generar OT")
 
     @staticmethod
-    def consume_item_stock(db: Session, wo_item: WorkOrderItem, wo: WorkOrder):
+    def consume_item_stock(db: TenantSession, wo_item: WorkOrderItem, wo: WorkOrder):
         movement = InventoryMovement(
             type=MovementType.OUT_SALE,
             reason=f"Consumo OT {wo.id} - Item {wo_item.id}"
@@ -132,7 +133,7 @@ class QuoteWorkOrderService:
         db.add(movement)
         db.flush()
 
-        original_product = db.query(Product).filter(Product.id == wo_item.product_id).first()
+        original_product = db.tenant_query(Product).filter(Product.id == wo_item.product_id).first()
         if not original_product:
             raise HTTPException(status_code=404, detail=f"Producto {wo_item.product_id} no encontrado")
 
@@ -143,7 +144,7 @@ class QuoteWorkOrderService:
             wo_item.stock_consumed = True  # Mark as consumed (no stock to deduct for services)
             return # Services don't deduct stock
 
-        candidates = db.query(Product).outerjoin(Product.location).filter(
+        candidates = db.tenant_query(Product).outerjoin(Product.location).filter(
             Product.barcode == original_product.barcode,
             Product.stock_quantity > 0,
             or_(StorageLocation.id == None, StorageLocation.name != "Pasillo Mermas")
@@ -187,8 +188,8 @@ class QuoteWorkOrderService:
 
 
     @staticmethod
-    def get_active_work_orders(db: Session, pos_only: bool = False, branch_id: Optional[UUID] = None):
-        query = db.query(WorkOrder).options(
+    def get_active_work_orders(db: TenantSession, pos_only: bool = False, branch_id: Optional[UUID] = None):
+        query = db.tenant_query(WorkOrder).options(
             joinedload(WorkOrder.items),
             joinedload(WorkOrder.tickets)
         ).filter(
@@ -216,13 +217,13 @@ class QuoteWorkOrderService:
         return active
 
     @staticmethod
-    def add_payment(db: Session, wo_id: UUID, payment_data: WorkOrderPaymentCreate, session_id: UUID) -> tuple[Ticket, Decimal]:
+    def add_payment(db: TenantSession, wo_id: UUID, payment_data: WorkOrderPaymentCreate, session_id: UUID) -> tuple[Ticket, Decimal]:
         with db.begin_nested():
-            wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).with_for_update().first()
+            wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).with_for_update().first()
             if not wo:
                 raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
                 
-            cash_session = db.query(CashSession).filter(CashSession.id == session_id).first()
+            cash_session = db.tenant_query(CashSession).filter(CashSession.id == session_id).first()
             if not cash_session or cash_session.status != "open":
                 raise HTTPException(status_code=400, detail="La sesión de caja no está abierta o es inválida")
                 
@@ -289,7 +290,7 @@ class QuoteWorkOrderService:
             # Mark items as paid if provided AND create SaleItem records for the Ticket
             if payment_data.item_ids:
                 from app.models.base import WorkOrderItem, SaleItem
-                wo_items = db.query(WorkOrderItem).filter(
+                wo_items = db.tenant_query(WorkOrderItem).filter(
                     WorkOrderItem.id.in_(payment_data.item_ids),
                     WorkOrderItem.work_order_id == wo.id
                 ).all()
@@ -355,8 +356,8 @@ class QuoteWorkOrderService:
         return ticket, new_balance
 
     @staticmethod
-    def get_wo_balance(db: Session, wo_id: UUID):
-        wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
+    def get_wo_balance(db: TenantSession, wo_id: UUID):
+        wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).first()
         if not wo:
             raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
             
@@ -372,8 +373,8 @@ class QuoteWorkOrderService:
         }
 
     @staticmethod
-    def delete_quote(db: Session, quote_id: UUID):
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    def delete_quote(db: TenantSession, quote_id: UUID):
+        quote = db.tenant_query(Quote).filter(Quote.id == quote_id).first()
         if not quote:
             raise HTTPException(status_code=404, detail="Cotización no encontrada")
         
@@ -384,8 +385,8 @@ class QuoteWorkOrderService:
         return True
 
     @staticmethod
-    def delete_work_order(db: Session, wo_id: UUID):
-        wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
+    def delete_work_order(db: TenantSession, wo_id: UUID):
+        wo = db.tenant_query(WorkOrder).filter(WorkOrder.id == wo_id).first()
         if not wo:
             raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
         

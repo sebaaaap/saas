@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from app.models.base import Product, Purchase, PurchaseItem, PurchaseState, MovementType, InventoryMovement, InventoryMovementItem
 from app.schemas.purchases import PurchaseCreate, PurchaseUpdate
 from app.schemas.inventory import InventoryMovementCreate, InventoryMovementItemCreate
@@ -8,7 +8,7 @@ from decimal import Decimal
 from app.core.utils import round_decimal
 
 class PurchaseService:
-    def __init__(self, db: Session):
+    def __init__(self, db: TenantSession):
         self.db = db
         self.inventory_service = InventoryService(db)
 
@@ -25,7 +25,7 @@ class PurchaseService:
         # Validar proveedor si viene
         if data.supplier_id:
             from app.models.base import Supplier
-            supplier = self.db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
+            supplier = self.db.tenant_query(Supplier).filter(Supplier.id == data.supplier_id).first()
             if not supplier:
                 raise HTTPException(status_code=404, detail=f"Proveedor {data.supplier_id} no encontrado")
         
@@ -48,7 +48,7 @@ class PurchaseService:
         # Crear items de compra
         for item in data.items:
             # Validar producto
-            product = self.db.query(Product).filter(Product.id == item.product_id).first()
+            product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
             
@@ -95,7 +95,7 @@ class PurchaseService:
         3. Genera movimiento de inventario (entrada)
         4. Incrementa el stock
         """
-        purchase = self.db.query(Purchase).filter(Purchase.id == purchase_id).first()
+        purchase = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id).first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Compra no encontrada")
         
@@ -109,7 +109,7 @@ class PurchaseService:
         inventory_items = []
         
         for item in purchase.items:
-            product = self.db.query(Product).filter(Product.id == item.product_id).first()
+            product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
             
@@ -136,12 +136,12 @@ class PurchaseService:
             self.db.flush()
 
             for item in purchase.items:
-                product = self.db.query(Product).filter(Product.id == item.product_id).first()
+                product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
                 if product:
                     # --- REGLA: Las compras NUNCA deben ingresar stock a Pasillo Mermas ---
                     # Obtenemos el ID de la ubicación de mermas (si existe) para excluirla
                     from app.models.base import StorageLocation
-                    merma_loc = self.db.query(StorageLocation).filter(
+                    merma_loc = self.db.tenant_query(StorageLocation).filter(
                         StorageLocation.name == "Pasillo Mermas"
                     ).first()
                     merma_loc_id = merma_loc.id if merma_loc else None
@@ -151,7 +151,7 @@ class PurchaseService:
                     # Si el producto referenciado está en Mermas, buscar otra instancia del mismo SKU
                     if merma_loc_id and product.location_id == merma_loc_id:
                         # Buscar el mismo producto (mismo barcode) en una ubicación que NO sea Mermas
-                        alt_product = self.db.query(Product).filter(
+                        alt_product = self.db.tenant_query(Product).filter(
                             Product.barcode == product.barcode,
                             Product.location_id != merma_loc_id,
                             Product.is_active == True
@@ -194,7 +194,7 @@ class PurchaseService:
         """
         Cancela una compra (solo si está en borrador)
         """
-        purchase = self.db.query(Purchase).filter(Purchase.id == purchase_id).first()
+        purchase = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id).first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Compra no encontrada")
         
@@ -221,7 +221,7 @@ class PurchaseService:
         """
         Obtiene una compra por ID con todos sus detalles
         """
-        purchase = self.db.query(Purchase).filter(Purchase.id == purchase_id).first()
+        purchase = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id).first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Compra no encontrada")
         return purchase
@@ -230,7 +230,7 @@ class PurchaseService:
         """
         Lista todas las compras, opcionalmente filtradas por estado
         """
-        query = self.db.query(Purchase)
+        query = self.db.tenant_query(Purchase)
         
         if state:
             try:
@@ -245,7 +245,7 @@ class PurchaseService:
         """
         Actualiza una compra (solo si está en borrador)
         """
-        purchase = self.db.query(Purchase).filter(Purchase.id == purchase_id).first()
+        purchase = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id).first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Compra no encontrada")
         
@@ -259,7 +259,7 @@ class PurchaseService:
         if data.supplier_id is not None:
             if data.supplier_id:
                 from app.models.base import Supplier
-                supplier = self.db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
+                supplier = self.db.tenant_query(Supplier).filter(Supplier.id == data.supplier_id).first()
                 if not supplier:
                     raise HTTPException(status_code=404, detail=f"Proveedor {data.supplier_id} no encontrado")
             purchase.supplier_id = data.supplier_id

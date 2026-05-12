@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.schemas.inventory import InventoryMovementCreate, InventoryMovementResponse, InterBranchTransferCreate
 from app.services.inventory_service import InventoryService
 from typing import List, Optional
@@ -13,7 +13,7 @@ router = APIRouter()
 @router.post("/adjustments", response_model=InventoryMovementResponse)
 def create_adjustment(
     data: InventoryMovementCreate, 
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """
@@ -24,14 +24,14 @@ def create_adjustment(
 
 @router.get("/movements", response_model=List[InventoryMovementResponse])
 def list_movements(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """
     Lista todos los movimientos de inventario (Kardex).
     """
     from app.models.base import InventoryMovement
-    movements = db.query(InventoryMovement).order_by(InventoryMovement.date.desc()).all()
+    movements = db.tenant_query(InventoryMovement).order_by(InventoryMovement.date.desc()).all()
     
     # Mapeo manual para asegurar que product_name se llene
     results = []
@@ -56,7 +56,7 @@ def list_movements(
 
 @router.get("/reports")
 def get_inventory_reports(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
@@ -66,7 +66,7 @@ def get_inventory_reports(
     from app.models.base import Product, InventoryMovementItem, InventoryMovement
     from sqlalchemy import func
 
-    query = db.query(Product).filter(Product.is_active == True)
+    query = db.tenant_query(Product).filter(Product.is_active == True)
     if branch_id:
         query = query.filter(Product.branch_id == branch_id)
         
@@ -84,7 +84,7 @@ def get_inventory_reports(
         total_potential_revenue += potential_revenue
 
         # Buscar última fecha de movimiento para este producto
-        last_mov = db.query(InventoryMovement.date)\
+        last_mov = db.tenant_query(InventoryMovement.date)\
             .join(InventoryMovementItem)\
             .filter(InventoryMovementItem.product_id == p.id)\
             .order_by(InventoryMovement.date.desc())\
@@ -115,7 +115,7 @@ def get_inventory_reports(
 @router.post("/transfer", response_model=InventoryMovementResponse)
 def transfer_stock_branches(
     data: InterBranchTransferCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
     """

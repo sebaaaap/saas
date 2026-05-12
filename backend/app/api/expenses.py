@@ -6,12 +6,13 @@ API de Gastos Rápidos (Modo Compra en PDV)
 """
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
-from app.database import get_db_session
+from app.api.deps import get_tenant_session
+from app.db.tenant_session import TenantSession
 from app.models.base import (
     Expense, ExpenseCategory, CashSession, PaymentMethod
 )
@@ -59,18 +60,18 @@ class ExpenseResponse(BaseModel):
 
 @router.get("/categories", response_model=List[ExpenseCategoryResponse])
 def get_expense_categories(
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
-    return db.query(ExpenseCategory).filter(ExpenseCategory.is_active == True).all()
+    return db.tenant_query(ExpenseCategory).filter(ExpenseCategory.is_active == True).all()
 
 @router.post("/categories", response_model=ExpenseCategoryResponse)
 def create_expense_category(
     data: ExpenseCategoryCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    existing = db.query(ExpenseCategory).filter(ExpenseCategory.name == data.name).first()
+    existing = db.tenant_query(ExpenseCategory).filter(ExpenseCategory.name == data.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe una categoría con ese nombre")
     cat = ExpenseCategory(name=data.name, color=data.color, icon=data.icon)
@@ -83,10 +84,10 @@ def create_expense_category(
 def update_expense_category(
     cat_id: UUID,
     data: ExpenseCategoryCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    cat = db.query(ExpenseCategory).filter(ExpenseCategory.id == cat_id).first()
+    cat = db.tenant_query(ExpenseCategory).filter(ExpenseCategory.id == cat_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     cat.name = data.name
@@ -99,10 +100,10 @@ def update_expense_category(
 @router.delete("/categories/{cat_id}")
 def delete_expense_category(
     cat_id: UUID,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
-    cat = db.query(ExpenseCategory).filter(ExpenseCategory.id == cat_id).first()
+    cat = db.tenant_query(ExpenseCategory).filter(ExpenseCategory.id == cat_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     # Soft delete
@@ -115,10 +116,10 @@ def delete_expense_category(
 @router.get("/", response_model=List[ExpenseResponse])
 def get_expenses(
     session_id: Optional[UUID] = None,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "vendedor"]))
 ):
-    q = db.query(Expense)
+    q = db.tenant_query(Expense)
     if session_id:
         q = q.filter(Expense.session_id == session_id)
     expenses = q.order_by(Expense.date_created.desc()).limit(50).all()
@@ -139,14 +140,14 @@ def get_expenses(
 @router.post("/", response_model=ExpenseResponse)
 def create_expense(
     data: ExpenseCreate,
-    db: Session = Depends(get_db_session),
+    db: TenantSession = Depends(get_tenant_session),
     active_session: CashSession = Depends(require_active_session)
 ):
     """
     Registra un gasto desde el PDV.
     Descuenta del saldo de caja correspondiente según payment_method.
     """
-    cat = db.query(ExpenseCategory).filter(ExpenseCategory.id == data.category_id).first()
+    cat = db.tenant_query(ExpenseCategory).filter(ExpenseCategory.id == data.category_id).first()
     if not cat:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
 

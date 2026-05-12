@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from decimal import Decimal
 from typing import Dict
 
@@ -15,7 +15,7 @@ class InventoryAuditService:
     """
 
     @staticmethod
-    def audit_session_stock_snapshot(db: Session, session_id: int):
+    def audit_session_stock_snapshot(db: TenantSession, session_id: int):
         """
         Agrupa todos los productos vendidos en la sesión y genera 
         una simulación / snapshot de cómo se comportó el inventario.
@@ -23,12 +23,12 @@ class InventoryAuditService:
         Esta lógica originalmente realizaba el descuento de stock al
         cierre de la sesión (Odoo / Snapshot pattern).
         """
-        session = db.query(CashSession).filter(CashSession.id == session_id).first()
+        session = db.tenant_query(CashSession).filter(CashSession.id == session_id).first()
         if not session:
             return None
 
         # Buscamos todos los items de tickets validados o pagados de esta sesión
-        session_items = db.query(SaleItem).join(Ticket).filter(
+        session_items = db.tenant_query(SaleItem).join(Ticket).filter(
             Ticket.session_id == session_id,
             Ticket.state.in_([SaleState.VALIDATED, SaleState.PAID, SaleState.REFUNDED])
         ).all()

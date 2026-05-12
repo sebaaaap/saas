@@ -3,7 +3,7 @@ Servicio de POS - Lógica de Negocio
 Implementa el flujo de Odoo: DRAFT -> VALIDATED -> PAID
 Con transacciones atómicas para integridad de datos
 """
-from sqlalchemy.orm import Session
+from app.db.tenant_session import TenantSession
 from sqlalchemy import and_
 from datetime import datetime
 from typing import List, Optional, Union
@@ -25,10 +25,10 @@ class POSService:
     """Servicio de Punto de Venta con lógica transaccional"""
     
     @staticmethod
-    def generate_ticket_number(db: Session, prefix: str = "T") -> str:
+    def generate_ticket_number(db: TenantSession, prefix: str = "T") -> str:
         """Genera número de ticket único: T-2026-0001 o NC-2026-0001"""
         year = datetime.now().year
-        last_ticket = db.query(Ticket).filter(
+        last_ticket = db.tenant_query(Ticket).filter(
             Ticket.ticket_number.like(f"{prefix}-{year}-%")
         ).order_by(Ticket.ticket_number.desc()).first()
         
@@ -78,7 +78,7 @@ class POSService:
     
     @staticmethod
     def create_sale_draft(
-        db: Session, 
+        db: TenantSession, 
         sale_data: Union[SaleCreate, QuickSaleCreate]
     ) -> Ticket:
         """
@@ -108,7 +108,7 @@ class POSService:
                 final_items_to_create = []
 
                 for item in sale_data.items:
-                    original_product = db.query(Product).filter(Product.id == item.product_id).first()
+                    original_product = db.tenant_query(Product).filter(Product.id == item.product_id).first()
                     if not original_product:
                         raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
 
@@ -127,7 +127,7 @@ class POSService:
                     item_consumption_rate = Decimal(str(item.consumption_rate)) if hasattr(item, 'consumption_rate') and getattr(item, 'consumption_rate') is not None else Decimal('1.0')
                     stock_to_deduct = Decimal(str(item.quantity)) * item_consumption_rate
 
-                    candidates = db.query(Product).outerjoin(Product.location).filter(
+                    candidates = db.tenant_query(Product).outerjoin(Product.location).filter(
                         Product.barcode == original_product.barcode,
                         Product.stock_quantity > 0,
                         or_(StorageLocation.id == None, StorageLocation.name != "Pasillo Mermas")
@@ -261,14 +261,14 @@ class POSService:
 
     
     @staticmethod
-    def validate_sale(db: Session, ticket_id: int) -> Ticket:
+    def validate_sale(db: TenantSession, ticket_id: int) -> Ticket:
         """
         Valida una venta: DRAFT -> VALIDATED
         En el modelo Odoo/Snapshot, esto NO resta stock de inmediato.
         Solo actualiza estado y totales de sesión.
         El descuento de inventario se realiza al CERRAR la sesión (SessionService.close_session).
         """
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        ticket = db.tenant_query(Ticket).filter(Ticket.id == ticket_id).first()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket no encontrado")
         
@@ -281,7 +281,7 @@ class POSService:
         
         # Actualizar totales de la sesión si existe
         if ticket.session_id:
-            session = db.query(CashSession).filter(CashSession.id == ticket.session_id).first()
+            session = db.tenant_query(CashSession).filter(CashSession.id == ticket.session_id).first()
             if session:
                 for payment in ticket.payments:
                     # Usamos .name para obtener CASH, CARD, etc. o .value para efectivo, tarjeta
@@ -301,11 +301,11 @@ class POSService:
         return ticket
     
     @staticmethod
-    def mark_as_paid(db: Session, ticket_id: int) -> Ticket:
+    def mark_as_paid(db: TenantSession, ticket_id: int) -> Ticket:
         """
         Marca una venta como pagada: VALIDATED -> PAID
         """
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        ticket = db.tenant_query(Ticket).filter(Ticket.id == ticket_id).first()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket no encontrado")
         
@@ -318,14 +318,14 @@ class POSService:
         return ticket
     
     @staticmethod
-    def create_refund(db: Session, refund_data: RefundCreate) -> tuple[Ticket, Ticket]:
+    def create_refund(db: TenantSession, refund_data: RefundCreate) -> tuple[Ticket, Ticket]:
         """
         Crea una nota de crédito (venta negativa)
         NO borra la venta original
         Opcionalmente regresa el producto al inventario o lo marca como merma
         """
         # Obtener venta original
-        original_ticket = db.query(Ticket).filter(
+        original_ticket = db.tenant_query(Ticket).filter(
             Ticket.id == refund_data.original_ticket_id
         ).first()
         
@@ -337,7 +337,7 @@ class POSService:
         
         # --- NUEVO: Validar que no hay servicios si se intenta gestionar stock/mermas ---
         for item_data in refund_data.items:
-            product = db.query(Product).filter(Product.id == item_data.product_id).first()
+            product = db.tenant_query(Product).filter(Product.id == item_data.product_id).first()
             if product and product.product_type == ProductType.SERVICE:
                 # Si el usuario eligió una razón que implica movimiento físico o intentó forzarlo 
                 # (aunque para servicios el backend lo ignora), lanzamos el error solicitado.
@@ -376,7 +376,7 @@ class POSService:
         # Crear items de la nota de crédito
         for item_data in refund_data.items:
             # Rescatamos la tasa de consumo original o asumimos 1.0
-            original_sale_item = db.query(SaleItem).filter(
+            original_sale_item = db.tenant_query(SaleItem).filter(
                 SaleItem.ticket_id == original_ticket.id,
                 SaleItem.product_id == item_data.product_id
             ).first()
@@ -407,7 +407,7 @@ class POSService:
         
         # Registrar items del movimiento Y actualizar stock en tiempo real
         for item in refund_data.items:
-            product = db.query(Product).filter(Product.id == item.product_id).first()
+            product = db.tenant_query(Product).filter(Product.id == item.product_id).first()
             if product:
                 if product.product_type == ProductType.SERVICE:
                     continue
@@ -415,7 +415,7 @@ class POSService:
                 stock_before = product.stock_quantity
 
                 # Obtenemos la tasa de la venta original para devolver exacto el stock
-                original_sale_item = db.query(SaleItem).filter(
+                original_sale_item = db.tenant_query(SaleItem).filter(
                     SaleItem.ticket_id == original_ticket.id,
                     SaleItem.product_id == product.id
                 ).first()
@@ -438,7 +438,7 @@ class POSService:
                 else:
                     # ── MERMA (no regresa al stock útil) ────────────────────────
                     # Buscamos o creamos el Pasillo Mermas
-                    merma_location = db.query(StorageLocation).filter(
+                    merma_location = db.tenant_query(StorageLocation).filter(
                         StorageLocation.name == "Pasillo Mermas"
                     ).first()
                     if not merma_location:
@@ -447,7 +447,7 @@ class POSService:
                         db.flush()
 
                     # Buscamos si ya hay un "twin" del producto en merma
-                    merma_product = db.query(Product).filter(
+                    merma_product = db.tenant_query(Product).filter(
                         Product.barcode == product.barcode,
                         Product.location_id == merma_location.id
                     ).first()
@@ -492,7 +492,7 @@ class POSService:
         # --- NUEVO: Actualizar totales de la sesión para el reembolso ---
         # Restamos el total reembolsado de los totales de la sesión
         if original_ticket.session_id:
-            session = db.query(CashSession).filter(CashSession.id == original_ticket.session_id).first()
+            session = db.tenant_query(CashSession).filter(CashSession.id == original_ticket.session_id).first()
             if session:
                 # Como es una nota de crédito, total_amount ya es negativo. 
                 # Simplemente lo sumamos (lo cual restará del acumulado positivo).
@@ -519,20 +519,20 @@ class POSService:
         return (credit_note, original_ticket)
     
     @staticmethod
-    def get_sale_by_id(db: Session, ticket_id: int) -> Optional[Ticket]:
+    def get_sale_by_id(db: TenantSession, ticket_id: int) -> Optional[Ticket]:
         """Obtiene una venta por ID"""
         from sqlalchemy.orm import joinedload
-        return db.query(Ticket).options(
+        return db.tenant_query(Ticket).options(
             joinedload(Ticket.customer),
             joinedload(Ticket.items).joinedload(SaleItem.product),
             joinedload(Ticket.payments)
         ).filter(Ticket.id == ticket_id).first()
     
     @staticmethod
-    def get_sales_by_session(db: Session, session_id: int) -> List[Ticket]:
+    def get_sales_by_session(db: TenantSession, session_id: int) -> List[Ticket]:
         """Obtiene todas las ventas de una sesión"""
         from sqlalchemy.orm import joinedload
-        return db.query(Ticket).options(
+        return db.tenant_query(Ticket).options(
             joinedload(Ticket.customer),
             joinedload(Ticket.items).joinedload(SaleItem.product),
             joinedload(Ticket.payments)
