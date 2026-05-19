@@ -257,7 +257,7 @@ class POSService:
             from sqlalchemy.exc import SQLAlchemyError
             if isinstance(e, SQLAlchemyError):
                 print(f"Database error during sale: {e}")
-            raise HTTPException(status_code=500, detail="Error de concurrencia o base de datos al realizar la venta. Verifica el stock e intenta de nuevo.")
+            raise HTTPException(status_code=500, detail=f"Error de base de datos: {str(e)}")
 
     
     @staticmethod

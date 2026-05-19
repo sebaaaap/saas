@@ -163,16 +163,38 @@ def validate_sale(ticket_id: UUID, db: TenantSession = Depends(get_tenant_sessio
     Ajusta el inventario de forma atómica
     Crea registros de trazabilidad (Inventory Logs)
     """
-    ticket = POSService.validate_sale(db, ticket_id)
-    return ticket
+    try:
+        ticket = POSService.validate_sale(db, ticket_id)
+        from fastapi.encoders import jsonable_encoder
+        from app.schemas.pos import SaleResponse
+        response_data = SaleResponse.model_validate(ticket)
+        return jsonable_encoder(response_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR en validate_sale: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sales/{ticket_id}/pay", response_model=SaleResponse)
 def mark_sale_as_paid(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
     """
     Marca una venta como pagada: VALIDATED -> PAID
     """
-    ticket = POSService.mark_as_paid(db, ticket_id)
-    return ticket
+    try:
+        ticket = POSService.mark_as_paid(db, ticket_id)
+        from fastapi.encoders import jsonable_encoder
+        from app.schemas.pos import SaleResponse
+        response_data = SaleResponse.model_validate(ticket)
+        return jsonable_encoder(response_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR en mark_sale_as_paid: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sales/{ticket_id}", response_model=SaleResponse)
 def get_sale(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
