@@ -72,14 +72,18 @@ class TenantSession:
 
     # ─── Tenant-aware methods ────────────────────────────────────────────────
 
-    def tenant_query(self, model: Type[T]):
+    def tenant_query(self, model):
         """
         Returns a query filtered by the current tenant's company_id.
         Use this instead of db.query() for all business data.
         """
         q = self._db.query(model)
-        if self.company_id is not None and issubclass(model, TenantModel):
-            q = q.filter(model.company_id == self.company_id)
+        
+        # Get the actual model class (handles both Product and Product.id)
+        model_class = model if isinstance(model, type) else getattr(model, "class_", None)
+        
+        if self.company_id is not None and model_class and issubclass(model_class, TenantModel):
+            q = q.filter(model_class.company_id == self.company_id)
         return q
 
     def tenant_add(self, instance: TenantModel):
