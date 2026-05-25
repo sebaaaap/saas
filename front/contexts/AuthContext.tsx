@@ -46,6 +46,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setUser(parsedUser);
                 // Sincronizar cookie de forma inmediata
                 document.cookie = `auth_token=${storedToken}; path=/; max-age=43200; SameSite=Lax`;
+
+                // Fetch fresh user data in the background
+                fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${storedToken}`,
+                        'X-Tenant-ID': 'default',
+                    },
+                })
+                .then(res => res.json())
+                .then(freshUser => {
+                    if (freshUser && freshUser.username) {
+                        localStorage.setItem('auth_user', JSON.stringify(freshUser));
+                        setUser(freshUser);
+                    }
+                })
+                .catch(err => console.error("Error refreshing user data:", err));
+
             } catch (e) {
                 console.error("Error al recuperar sesión:", e);
                 localStorage.clear();

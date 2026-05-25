@@ -62,6 +62,10 @@ def check_roles(allowed_roles: List[str]):
         # Obtener el valor del rol del usuario (string)
         user_role = current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role)
         
+        # El superadmin tiene acceso irrestricto a todos los módulos
+        if user_role == 'superadmin':
+            return current_user
+            
         # Verificar si el rol del usuario está en la lista de roles permitidos
         if user_role not in allowed_roles:
             raise HTTPException(

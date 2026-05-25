@@ -845,6 +845,65 @@ def export_sales_excel(
 
     auto_width(ws4)
 
+    # ═══════════════════════════════════════════════════════════════
+    # HOJA 5 — SII (Contable)
+    # ═══════════════════════════════════════════════════════════════
+    ws5 = wb.create_sheet("SII - Contable")
+
+    headers5 = [
+        "Fecha", "Hora", "Tipo Documento", "Nº Documento", 
+        "Sucursal", "Método de Pago", "Monto Exento", 
+        "Monto Neto", "IVA (19%)", "Monto Total", "Estado"
+    ]
+    for j, h in enumerate(headers5, 1):
+        ws5.cell(row=1, column=j, value=h)
+    style_header(ws5, 1, len(headers5))
+    ws5.row_dimensions[1].height = 22
+
+    row5 = 2
+    for t in tickets:
+        # Solo incluir ventas válidas o pagadas, excluyendo anuladas para el contable
+        # Ya filtramos por VALID_STATES y is_refunded == False en la query base
+        method = "Mixto"
+        if len(t.payments) == 1:
+            pm = t.payments[0].payment_method
+            method = (pm.value if hasattr(pm, 'value') else str(pm)).capitalize()
+        elif len(t.payments) > 1:
+            method = "Mixto"
+
+        branch_name = branches_map.get(t.branch_id, "Casa Matriz") if t.branch_id else "Casa Matriz"
+        
+        total = float(t.total_amount or 0)
+        # Cálculo de IVA para Chile (Total = Neto + IVA) (IVA = 19%)
+        neto = round(total / 1.19)
+        iva = total - neto
+        
+        row_data5 = [
+            t.date_created.strftime("%d/%m/%Y"),
+            t.date_created.strftime("%H:%M"),
+            (t.document_type or "boleta").upper(),
+            t.ticket_number,
+            branch_name,
+            method,
+            0,       # Monto Exento
+            neto,    # Monto Neto
+            iva,     # IVA
+            total,   # Monto Total
+            t.state.value.capitalize(),
+        ]
+        
+        for j, val in enumerate(row_data5, 1):
+            ws5.cell(row=row5, column=j, value=val)
+
+        # Formato moneda para montos contables (sin decimales para Chile es común, pero dejamos enteros)
+        for col_idx in [7, 8, 9, 10]:
+            ws5.cell(row=row5, column=col_idx).number_format = '"$"#,##0'
+            
+        style_row(ws5, row5, len(headers5), alt=(row5 % 2 == 0))
+        row5 += 1
+
+    auto_width(ws5)
+
     # ── Serializar y retornar ─────────────────────────────────────
     buffer = io.BytesIO()
     wb.save(buffer)

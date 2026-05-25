@@ -28,7 +28,7 @@ class POSService:
     def generate_ticket_number(db: TenantSession, prefix: str = "T") -> str:
         """Genera número de ticket único: T-2026-0001 o NC-2026-0001"""
         year = datetime.now().year
-        last_ticket = db.tenant_query(Ticket).filter(
+        last_ticket = db.query(Ticket).filter(
             Ticket.ticket_number.like(f"{prefix}-{year}-%")
         ).order_by(Ticket.ticket_number.desc()).first()
         
@@ -439,10 +439,17 @@ class POSService:
                     # ── MERMA (no regresa al stock útil) ────────────────────────
                     # Buscamos o creamos el Pasillo Mermas
                     merma_location = db.tenant_query(StorageLocation).filter(
-                        StorageLocation.name == "Pasillo Mermas"
+                        StorageLocation.name == "Pasillo Mermas",
+                        StorageLocation.branch_id == original_ticket.branch_id
                     ).first()
                     if not merma_location:
-                        merma_location = StorageLocation(name="Pasillo Mermas")
+                        merma_location = StorageLocation(
+                            name="Pasillo Mermas",
+                            zone="Virtual",
+                            path="Virtual/Mermas",
+                            allows_multiple_products=True,
+                            branch_id=original_ticket.branch_id
+                        )
                         db.add(merma_location)
                         db.flush()
 
@@ -464,7 +471,8 @@ class POSService:
                             category_id=product.category_id,
                             location_id=merma_location.id,
                             stock_quantity=0,
-                            is_active=True
+                            is_active=True,
+                            branch_id=original_ticket.branch_id
                         )
                         db.add(merma_product)
                         db.flush()

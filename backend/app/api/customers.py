@@ -239,7 +239,7 @@ def get_customer_history(customer_id: UUID, db: TenantSession = Depends(get_tena
         })
 
     # Simple KPIs
-    stats = db.tenant_query(
+    stats = db.tenant_query(Ticket).with_entities(
         func.count(Ticket.id),
         func.sum(Ticket.total_amount)
     ).filter(
