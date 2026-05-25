@@ -275,10 +275,15 @@ def create_tenant(
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe una empresa con ese nombre")
 
-    # 2. Check username uniqueness globally
+    # 2. Check username and email uniqueness globally
     existing_user = db.query(User).filter(User.username == data.admin_username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
+        
+    if data.admin_email:
+        existing_email = db.query(User).filter(User.email == data.admin_email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="El correo electrónico ya está registrado")
 
     # 3. Create Company
     company = Company(
