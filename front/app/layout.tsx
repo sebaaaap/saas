@@ -9,7 +9,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
-  title: 'Mini Odoo - Punto de Venta',
+  title: 'VKI - Punto de Venta',
   description: 'Modulo de Punto de Venta estilo Odoo 17',
 }
 

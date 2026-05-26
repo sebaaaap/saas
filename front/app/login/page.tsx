@@ -37,7 +37,7 @@ export default function LoginPage() {
                         <Package size={40} className="text-white" strokeWidth={2.5} />
                     </div>
                     <h1 className="text-3xl font-bold text-slate-900 mb-2">
-                        POS Antigravity
+                        VKI
                     </h1>
                     <p className="text-sm text-slate-600 font-medium">
                         Sistema de Punto de Venta e Inventario
@@ -151,7 +151,7 @@ export default function LoginPage() {
 
                 {/* Footer */}
                 <div className="text-center mt-6 text-xs text-slate-500 animate-in fade-in duration-500 delay-200">
-                    <p>© 2026 POS Antigravity. Sistema de Gestión Empresarial.</p>
+                    <p>© 2026 VKI. Sistema de Gestión Empresarial.</p>
                 </div>
             </div>
         </div>
