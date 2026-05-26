@@ -129,24 +129,7 @@ export default function LoginPage() {
                         </form>
                     </div>
 
-                    {/* Footer con credenciales de demo */}
-                    <div className="px-8 py-6 bg-slate-50 border-t border-slate-200">
-                        <div className="text-xs text-slate-600 space-y-2">
-                            <p className="font-bold text-slate-700 uppercase tracking-wider mb-3">
-                                Credenciales de Prueba:
-                            </p>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                                    <p className="font-bold text-indigo-600 mb-1">Admin</p>
-                                    <p className="font-mono">admin / admin123</p>
-                                </div>
-                                <div className="p-3 bg-white rounded-lg border border-slate-200">
-                                    <p className="font-bold text-purple-600 mb-1">Vendedor</p>
-                                    <p className="font-mono">vendedor / vendedor123</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+
                 </div>
 
                 {/* Footer */}
