@@ -93,7 +93,7 @@ export function BackendDashboard({ onNavigate }: BackendDashboardProps) {
             </div>
           )}
           <div>
-            <h1 className="text-sm font-bold text-foreground leading-none">AutoTaller Pro</h1>
+            <h1 className="text-sm font-bold text-foreground leading-none">VKI</h1>
             <p className="text-[11px] text-muted-foreground">Sistema de Gestion - Talleres Mecanicos</p>
           </div>
         </div>
