@@ -16,7 +16,7 @@ router = APIRouter()
 class ProductCreate(BaseModel):
     name: str
     internal_reference: Optional[str] = None
-    barcode: str
+    barcode: Optional[str] = None
     price: float
     cost: float
     uom: str = "unidades"
@@ -28,6 +28,8 @@ class ProductCreate(BaseModel):
     location_id: Optional[UUID] = None
     is_variable_consumption: bool = False
     default_consumption_rate: float = 1.0
+    supplier_id: Optional[UUID] = None
+    supplier_code: Optional[str] = None
 
 import pandas as pd
 import io
@@ -69,9 +71,17 @@ async def import_products(
         
         for _, row in df.iterrows():
             name = str(row["nombre"]).strip()
-            barcode = str(row["codigo de barras"]).strip()
-            if pd.isna(name) or pd.isna(barcode) or not name or not barcode:
+            raw_barcode = str(row.get("codigo de barras", "")).strip()
+            
+            if pd.isna(name) or not name:
                 continue
+                
+            # Autogeneración de barcode si viene vacío (Simulando un EAN-13 interno con prefijo 200)
+            if pd.isna(raw_barcode) or raw_barcode.lower() == "nan" or not raw_barcode:
+                barcode = f"200{random.randint(1000000000, 9999999999)}"
+            else:
+                barcode = raw_barcode
+                
                 
             price = float(row.get("precio venta") or 0)
             cost = float(row.get("costo") or 0)
@@ -131,17 +141,45 @@ async def import_products(
                  prod_type = ProductType.SERVICE
                 
             # 4. BUSCAR/CREAR PRODUCTO
-            product = db.tenant_query(Product).filter(
-                Product.barcode == barcode,
-                Product.branch_id == branch_id,
-                Product.is_active == True
-            ).first()
+            product = None
+            
+            # 4.a Intentar por código de barras si viene en el Excel
+            if raw_barcode and raw_barcode.lower() != "nan":
+                product = db.tenant_query(Product).filter(
+                    Product.barcode == raw_barcode,
+                    Product.branch_id == branch_id,
+                    Product.is_active == True
+                ).first()
+                
+            # 4.b Si no se encontró (o no venía barcode), intentar por referencia interna
+            if not product and internal_ref:
+                product = db.tenant_query(Product).filter(
+                    Product.internal_reference == internal_ref,
+                    Product.branch_id == branch_id,
+                    Product.is_active == True
+                ).first()
+                
+            # 4.c Si aún no se encuentra, intentar por coincidencia exacta de nombre
+            if not product:
+                product = db.tenant_query(Product).filter(
+                    Product.name.ilike(name),
+                    Product.branch_id == branch_id,
+                    Product.is_active == True
+                ).first()
+            
+            # Autogenerar código de barras solo si realmente lo necesitamos
+            final_barcode = raw_barcode
+            if not final_barcode or final_barcode.lower() == "nan":
+                if product and product.barcode:
+                    final_barcode = product.barcode # Mantener el que ya tenía
+                else:
+                    final_barcode = f"200{random.randint(1000000000, 9999999999)}"
             
             is_new = False
             if not product:
                 product = Product(
                     name=name,
-                    barcode=barcode,
+                    barcode=final_barcode,
                     internal_reference=internal_ref,
                     price=price,
                     cost=cost,
@@ -149,7 +187,7 @@ async def import_products(
                     min_stock=min_stock,
                     product_type=prod_type,
                     category_id=cat_obj.id if cat_obj else None,
-                    category=cat_obj.name if cat_obj else None,
+                    category=category_name if cat_obj else None,
                     location_id=loc_obj.id if loc_obj else None,
                     branch_id=branch_id
                 )
@@ -158,13 +196,14 @@ async def import_products(
                 is_new = True
             else:
                 product.name = name
+                product.barcode = final_barcode
                 product.internal_reference = internal_ref
                 product.price = price
                 product.cost = cost
                 product.min_stock = min_stock
                 if cat_obj:
                     product.category_id = cat_obj.id
-                    product.category = cat_obj.name
+                    product.category = category_name
                 if loc_obj:
                     product.location_id = loc_obj.id
                 product.product_type = prod_type
@@ -203,6 +242,9 @@ def create_product(
     current_user = Depends(check_roles(["admin"])),
     branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
+    if not product.barcode:
+        product.barcode = f"200{random.randint(1000000000, 9999999999)}"
+        
     query = db.tenant_query(Product).filter(
         Product.barcode == product.barcode,
         Product.is_active == True
@@ -239,12 +281,23 @@ def create_product(
                     detail=f"La ubicación '{loc.name}' es de producto único y ya está ocupada por: {occupant.name}"
                 )
 
-    db_product = Product(**product.model_dump())
+    db_product = Product(**product.model_dump(exclude={'supplier_id', 'supplier_code'}))
     if branch_id:
         db_product.branch_id = branch_id
         
     try:
         db.add(db_product)
+        db.flush()
+        
+        if product.supplier_id and product.supplier_code:
+            from app.models.base import ProductSupplier
+            sup_link = ProductSupplier(
+                product_id=db_product.id,
+                supplier_id=product.supplier_id,
+                supplier_code=product.supplier_code
+            )
+            db.add(sup_link)
+            
         db.commit()
         db.refresh(db_product)
         return db_product
@@ -279,6 +332,7 @@ class ProductAggregatedResponse(BaseModel):
     is_variable_consumption: bool = False
     default_consumption_rate: float = 1.0
     min_stock: float = 5.0
+    suppliers_info: List[dict] = [] # dict mapping to avoid circular import or just simple dict
 
 @router.get("/", response_model=List[ProductAggregatedResponse])
 def list_products(
@@ -302,7 +356,7 @@ def list_products(
             (Product.internal_reference.ilike(f"%{q}%"))
         )
         
-    products = query.options(joinedload(Product.location)).all()
+    products = query.options(joinedload(Product.location), joinedload(Product.suppliers_info)).all()
     
     grouped = defaultdict(list)
     for p in products:
@@ -360,7 +414,8 @@ def list_products(
             image_path=primary.image_path,
             is_variable_consumption=primary.is_variable_consumption,
             default_consumption_rate=float(primary.default_consumption_rate) if primary.default_consumption_rate is not None else 1.0,
-            min_stock=float(primary.min_stock) if primary.min_stock is not None else 5.0
+            min_stock=float(primary.min_stock) if primary.min_stock is not None else 5.0,
+            suppliers_info=[{"supplier_id": str(s.supplier_id), "supplier_code": s.supplier_code} for s in primary.suppliers_info]
         ))
     
     return results

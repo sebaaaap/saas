@@ -170,16 +170,40 @@ export default function AppPage() {
       return {
         id: String(cat.id),
         name: cat.name,
+        full_path: cat.full_path || cat.name,
+        parent_id: cat.parent_id ? String(cat.parent_id) : null,
         icon: iconKey ? iconMap[iconKey] : "LayoutGrid",
         color: cat.color || "#6366f1"
       }
     })
 
     return [
-      { id: "all", name: "Todos", icon: "LayoutGrid", color: "#6366f1" },
+      { id: "all", name: "Todos", icon: "LayoutGrid", color: "#6366f1", parent_id: null },
       ...baseCategories
     ]
   }, [apiCategories])
+
+  // Categories shown in the POS bar:
+  // Always show "Todos" + root categories (no parent).
+  // When a category with children is selected, also show its children so the user can drill down.
+  const visibleCategories = useMemo(() => {
+    const all = mappedCategories.find(c => c.id === "all")!
+    const roots = mappedCategories.filter(c => c.id !== "all" && !c.parent_id)
+
+    if (selectedCategoryId === "all") {
+      return [all, ...roots]
+    }
+
+    // Find children of the selected category
+    const children = mappedCategories.filter(c => c.parent_id === selectedCategoryId)
+    if (children.length > 0) {
+      // Show: Todos, roots (to go back), then children of selected
+      return [all, ...roots, ...children]
+    }
+
+    // Selected is a leaf — just show Todos + roots
+    return [all, ...roots]
+  }, [mappedCategories, selectedCategoryId])
 
   // Map API Products to UI Format
   const mappedProducts = useMemo(() => {
@@ -213,12 +237,47 @@ export default function AppPage() {
     })
   }, [apiProducts, mappedCategories])
 
-  // Filter products by selected category and apply local cart deduction for "Real-time" feel
+  // Build the set of all category IDs that are descendants of (or equal to) the selected one
+  const descendantCategoryIds = useMemo(() => {
+    if (selectedCategoryId === "all") return new Set<string>()
+    const result = new Set<string>()
+    const queue = [selectedCategoryId]
+    while (queue.length > 0) {
+      const curr = queue.shift()!
+      result.add(curr)
+      // Add all direct children
+      mappedCategories
+        .filter(c => c.parent_id === curr)
+        .forEach(child => queue.push(child.id))
+    }
+    return result
+  }, [selectedCategoryId, mappedCategories])
+
+  // Filter products by selected category (including all descendants) + search
   const filteredProducts = useMemo(() => {
+    // Find the name of the selected category for text-based matching fallback
+    const selectedCat = mappedCategories.find(c => c.id === selectedCategoryId)
+    const selectedCatNameLower = selectedCat ? selectedCat.name.toLowerCase() : ""
+
     const base = mappedProducts.filter(p => {
-      const matchesCategory = selectedCategoryId === "all" || p.categoryId === selectedCategoryId
-      const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const pCatIdLower = String(p.categoryId).toLowerCase()
+      
+      let matchesCategory =
+        selectedCategoryId === "all" ||
+        descendantCategoryIds.has(p.categoryId) ||
+        pCatIdLower === String(selectedCategoryId).toLowerCase()
+
+      // Text-based fallback for subcategories (e.g. category "Lubricantes/motor" and selected "Lubricantes")
+      if (!matchesCategory && selectedCatNameLower && selectedCatNameLower !== "todos") {
+        if (pCatIdLower.startsWith(selectedCatNameLower + "/") || pCatIdLower.startsWith(selectedCatNameLower + "-")) {
+          matchesCategory = true
+        }
+      }
+
+      const matchesSearch =
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.barcode?.includes(searchQuery)
+
       return matchesCategory && matchesSearch
     })
 
@@ -237,7 +296,7 @@ export default function AppPage() {
         stock: Math.max(0, toNum(p.stock) - stockToDeduct)
       }
     })
-  }, [mappedProducts, selectedCategoryId, searchQuery, orders, currentOrderIndex])
+  }, [mappedProducts, selectedCategoryId, descendantCategoryIds, searchQuery, orders, currentOrderIndex])
 
   const updateCurrentOrder = useCallback(
     (updater: (order: Order) => Order) => {
@@ -540,10 +599,16 @@ export default function AppPage() {
               }
             })
 
-            const method = paymentMethods.find(m =>
+            const foundMethod = paymentMethods.find(m =>
               m.type.toLowerCase() === sale.payment_method.toLowerCase() ||
               m.name.toLowerCase() === sale.payment_method.toLowerCase()
-            ) || paymentMethods[0]
+            )
+            const method = foundMethod || {
+              id: `pm_dynamic_${sale.payment_method}`,
+              name: sale.payment_method.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+              icon: "Banknote", // fallback icon
+              type: sale.payment_method
+            }
 
             return {
               id: String(sale.id),
@@ -1016,7 +1081,7 @@ export default function AppPage() {
 
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <div className="flex flex-1 flex-col overflow-hidden">
-              <PdvCategories categories={mappedCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />
+              <PdvCategories categories={visibleCategories} selectedCategoryId={selectedCategoryId} onSelectCategory={setSelectedCategoryId} />
               <div className="flex-1 min-h-0 overflow-hidden p-4 pt-0 flex flex-col">
                 <PdvProductGrid
                   products={filteredProducts}

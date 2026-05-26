@@ -47,6 +47,7 @@ interface Category {
     id: string;
     name: string;
     color?: string;
+    full_path?: string;
 }
 
 const flattenLocations = (nodes: any[], list: FlatLocation[] = []): FlatLocation[] => {
@@ -571,7 +572,7 @@ function CategoriesTab() {
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-3">
                                             <div className="w-1.5 h-1.5 rounded-full bg-primary/30 group-hover:bg-primary transition-all" />
-                                            <span className="font-medium text-foreground text-sm">{cat.name}</span>
+                                            <span className="font-medium text-foreground text-sm">{cat.full_path || cat.name}</span>
                                         </div>
                                     </td>
                                     <td className="px-5 py-3.5 text-center">

@@ -109,4 +109,6 @@ export interface CategoryResponse {
     name: string;
     code?: string;
     color?: string;
+    parent_id?: string | null;
+    full_path?: string;
 }

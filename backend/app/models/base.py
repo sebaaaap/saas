@@ -155,11 +155,15 @@ class StorageLocation(TenantModel):
 class ProductCategory(TenantModel):
     __tablename__ = "product_categories"
     
-    name = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False, index=True)
     color = Column(String, nullable=True)
     parent_id = Column(UUID(as_uuid=True), ForeignKey("product_categories.id"), nullable=True)
     
     products = relationship("Product", back_populates="category_rel")
+
+    __table_args__ = (
+        UniqueConstraint('name', 'company_id', 'parent_id', name='uix_category_name_company_parent'),
+    )
 
 class Product(TenantModel):
     __tablename__ = "products"
@@ -194,6 +198,7 @@ class Product(TenantModel):
     movement_items = relationship("InventoryMovementItem", back_populates="product")
     sale_items = relationship("SaleItem", back_populates="product")
     purchase_items = relationship("PurchaseItem", back_populates="product")
+    suppliers_info = relationship("ProductSupplier", back_populates="product", cascade="all, delete-orphan")
 
 class CashRegister(TenantModel):
     __tablename__ = "cash_registers"
@@ -352,6 +357,21 @@ class Supplier(TenantModel):
     email = Column(String, nullable=True)
     
     purchases = relationship("Purchase", back_populates="supplier")
+    products_info = relationship("ProductSupplier", back_populates="supplier", cascade="all, delete-orphan")
+
+class ProductSupplier(TenantModel):
+    __tablename__ = "product_suppliers"
+    
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=False)
+    supplier_code = Column(String, index=True, nullable=False)
+    
+    product = relationship("Product", back_populates="suppliers_info")
+    supplier = relationship("Supplier", back_populates="products_info")
+
+    __table_args__ = (
+        UniqueConstraint('product_id', 'supplier_id', 'supplier_code', name='uix_product_supplier_code'),
+    )
 
 class Purchase(TenantModel):
     __tablename__ = "purchases"

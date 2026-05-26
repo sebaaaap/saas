@@ -302,10 +302,17 @@ def get_profitability(
     }
 
 @router.get("/sales/cash_reports")
-def get_cash_reports(db: TenantSession = Depends(get_tenant_session)):
+def get_cash_reports(
+    branch_id: Optional[UUID] = Query(None, alias="branch_id"),
+    db: TenantSession = Depends(get_tenant_session)
+):
     # Usar los campos REALES del modelo CashSession:
     # opened_at, closed_at, opening_balance, closing_balance, status, user_id, cash_register
-    sessions_db = db.tenant_query(CashSession).order_by(desc(CashSession.opened_at)).limit(10).all()
+    q = db.tenant_query(CashSession)
+    if branch_id:
+        q = q.join(CashRegister).filter(CashRegister.branch_id == branch_id)
+        
+    sessions_db = q.order_by(desc(CashSession.opened_at)).limit(10).all()
     
     data = []
     total_diff = Decimal('0')
@@ -452,11 +459,17 @@ def get_purchases_summary(
     total_invested = sum(p.total_cost or Decimal('0') for p in purchases_q.all())
     
     # Pendientes
-    pending_count = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.DRAFT).count()
+    pending_q = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.DRAFT)
+    if branch_id:
+        pending_q = pending_q.filter(Purchase.branch_id == branch_id)
+    pending_count = pending_q.count()
     
     # Top Supplier
     suppliers_vol = {}
-    all_confirmed = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.CONFIRMED).all()
+    all_confirmed_q = db.tenant_query(Purchase).filter(Purchase.state == PurchaseState.CONFIRMED)
+    if branch_id:
+        all_confirmed_q = all_confirmed_q.filter(Purchase.branch_id == branch_id)
+    all_confirmed = all_confirmed_q.all()
     for p in all_confirmed:
         s_name = p.supplier.name if p.supplier else "Desconocido"
         suppliers_vol[s_name] = suppliers_vol.get(s_name, Decimal('0')) + (p.total_cost or Decimal('0'))
@@ -470,7 +483,11 @@ def get_purchases_summary(
     chart_data = [{"name": s[0], "volume": float(s[1])} for s in sorted_suppliers[:5]]
     
     # Movimientos recientes
-    recent_items = db.tenant_query(PurchaseItem).join(Purchase).order_by(desc(Purchase.date_created)).limit(20).all()
+    recent_q = db.tenant_query(PurchaseItem).join(Purchase)
+    if branch_id:
+        recent_q = recent_q.filter(Purchase.branch_id == branch_id)
+    recent_items = recent_q.order_by(desc(Purchase.date_created)).limit(20).all()
+    
     movements = []
     for item in recent_items:
         movements.append({
@@ -546,7 +563,7 @@ def export_sales_excel(
     )
     if branch_id:
         expenses_q = expenses_q.join(CashSession.cash_register).filter(
-            CashSession.user_id != None  # keep join valid; branch filter via session not modeled here
+            CashRegister.branch_id == branch_id
         )
     expenses = expenses_q.all()
     
@@ -1045,6 +1062,7 @@ def export_inventory_excel(
 def export_purchases_excel(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    branch_id: Optional[UUID] = Query(None, alias="branch_id"),
     db: TenantSession = Depends(get_tenant_session)
 ):
     """
@@ -1061,16 +1079,18 @@ def export_purchases_excel(
     start_dt = parse_date(start_date) or datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_dt   = parse_date(end_date)   or datetime.utcnow()
 
-    purchases = (
+    purchases_q = (
         db.tenant_query(Purchase)
         .filter(
             Purchase.date_created >= start_dt,
             Purchase.date_created <= end_dt,
             Purchase.state == PurchaseState.CONFIRMED
         )
-        .order_by(desc(Purchase.date_created))
-        .all()
     )
+    if branch_id:
+        purchases_q = purchases_q.filter(Purchase.branch_id == branch_id)
+        
+    purchases = purchases_q.order_by(desc(Purchase.date_created)).all()
 
     wb = openpyxl.Workbook()
     

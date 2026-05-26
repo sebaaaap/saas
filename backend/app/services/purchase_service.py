@@ -1,8 +1,6 @@
 from app.db.tenant_session import TenantSession
 from app.models.base import Product, Purchase, PurchaseItem, PurchaseState, MovementType, InventoryMovement, InventoryMovementItem
 from app.schemas.purchases import PurchaseCreate, PurchaseUpdate
-from app.schemas.inventory import InventoryMovementCreate, InventoryMovementItemCreate
-from app.services.inventory_service import InventoryService
 from fastapi import HTTPException
 from decimal import Decimal
 from app.core.utils import round_decimal
@@ -10,7 +8,6 @@ from app.core.utils import round_decimal
 class PurchaseService:
     def __init__(self, db: TenantSession):
         self.db = db
-        self.inventory_service = InventoryService(db)
 
     def create_purchase(self, data: PurchaseCreate) -> Purchase:
         """
@@ -105,83 +102,77 @@ class PurchaseService:
                 detail=f"Solo se pueden confirmar compras en estado borrador. Estado actual: {purchase.state.value}"
             )
         
-        # Preparar items para movimiento de inventario
-        inventory_items = []
-        
+        branch_id = purchase.branch_id  # Usar la sucursal de la compra para todos los filtros
+
+        # Validar que todos los productos existan antes de tocar nada
         for item in purchase.items:
             product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
-            
-            # Actualizar costo del producto (último costo de compra)
-            product.cost = item.unit_cost
-            
-            # Preparar item para movimiento de inventario
-            inventory_items.append(InventoryMovementItemCreate(
-                product_id=product.id,
-                quantity=item.quantity
-            ))
         
         # Cambiar estado a CONFIRMADO
         purchase.state = PurchaseState.CONFIRMED
         
         try:
-            # Generar movimiento de inventario (IN_PURCHASE) directamente aquí para mantener la transacción
-            mov_type = MovementType.IN_PURCHASE
+            # Generar movimiento de inventario (IN_PURCHASE)
             movement = InventoryMovement(
-                type=mov_type,
+                type=MovementType.IN_PURCHASE,
                 reason=f"Compra #{purchase.id}" + (f" - Factura: {purchase.invoice_number}" if purchase.invoice_number else "")
             )
             self.db.add(movement)
             self.db.flush()
 
+            # Obtener la ubicación de mermas UNA VEZ, filtrada por sucursal
+            from app.models.base import StorageLocation
+            merma_loc_q = self.db.tenant_query(StorageLocation).filter(
+                StorageLocation.name == "Pasillo Mermas"
+            )
+            if branch_id:
+                merma_loc_q = merma_loc_q.filter(StorageLocation.branch_id == branch_id)
+            merma_loc = merma_loc_q.first()
+            merma_loc_id = merma_loc.id if merma_loc else None
+
             for item in purchase.items:
                 product = self.db.tenant_query(Product).filter(Product.id == item.product_id).first()
-                if product:
-                    # --- REGLA: Las compras NUNCA deben ingresar stock a Pasillo Mermas ---
-                    # Obtenemos el ID de la ubicación de mermas (si existe) para excluirla
-                    from app.models.base import StorageLocation
-                    merma_loc = self.db.tenant_query(StorageLocation).filter(
-                        StorageLocation.name == "Pasillo Mermas"
-                    ).first()
-                    merma_loc_id = merma_loc.id if merma_loc else None
+                if not product:
+                    continue
 
-                    target_product = product  # Por defecto usamos el producto del item
+                target_product = product
 
-                    # Si el producto referenciado está en Mermas, buscar otra instancia del mismo SKU
-                    if merma_loc_id and product.location_id == merma_loc_id:
-                        # Buscar el mismo producto (mismo barcode) en una ubicación que NO sea Mermas
-                        alt_product = self.db.tenant_query(Product).filter(
-                            Product.barcode == product.barcode,
-                            Product.location_id != merma_loc_id,
-                            Product.is_active == True
-                        ).first()
-
-                        if alt_product:
-                            # Usar la ubicación alternativa para recibir el stock de la compra
-                            target_product = alt_product
-                        # Si no hay alternativa, el stock se suma en el producto original
-                        # (edge case: producto que solo existe en Mermas, se deja igual)
-
-                    # Capturar stock antes para trazabilidad
-                    stock_before = target_product.stock_quantity
-
-                    # Incrementar stock en la ubicación correcta (no Mermas)
-                    target_product.stock_quantity += item.quantity
-                    # Actualizar costo (último costo de adquisición) en ambos registros si aplica
-                    target_product.cost = item.unit_cost
-                    if target_product.id != product.id:
-                        product.cost = item.unit_cost  # Sincronizar costo también en registro de mermas
-
-                    # Registrar item de movimiento apuntando al producto correcto
-                    inv_item = InventoryMovementItem(
-                        movement_id=movement.id,
-                        product_id=target_product.id,
-                        quantity=item.quantity,
-                        stock_before=stock_before,
-                        stock_after=target_product.stock_quantity
+                # Si el producto referenciado está en Mermas, buscar otra instancia del mismo SKU
+                # en la misma sucursal que no sea Mermas
+                if merma_loc_id and product.location_id == merma_loc_id:
+                    alt_q = self.db.tenant_query(Product).filter(
+                        Product.barcode == product.barcode,
+                        Product.location_id != merma_loc_id,
+                        Product.is_active == True
                     )
-                    self.db.add(inv_item)
+                    if branch_id:
+                        alt_q = alt_q.filter(Product.branch_id == branch_id)
+                    alt_product = alt_q.first()
+
+                    if alt_product:
+                        target_product = alt_product
+
+                # Capturar stock antes para trazabilidad
+                stock_before = target_product.stock_quantity
+
+                # Incrementar stock
+                target_product.stock_quantity += item.quantity
+                # Actualizar costo (último costo de adquisición)
+                target_product.cost = item.unit_cost
+                if target_product.id != product.id:
+                    product.cost = item.unit_cost  # Sincronizar costo en registro de mermas también
+
+                # Registrar movimiento
+                inv_item = InventoryMovementItem(
+                    movement_id=movement.id,
+                    product_id=target_product.id,
+                    quantity=item.quantity,
+                    stock_before=stock_before,
+                    stock_after=target_product.stock_quantity
+                )
+                self.db.add(inv_item)
 
             self.db.commit()
             self.db.refresh(purchase)
@@ -217,28 +208,34 @@ class PurchaseService:
             self.db.rollback()
             raise HTTPException(status_code=500, detail=f"Error al cancelar la compra: {str(e)}")
 
-    def get_purchase(self, purchase_id: int) -> Purchase:
+    def get_purchase(self, purchase_id, branch_id=None) -> Purchase:
         """
-        Obtiene una compra por ID con todos sus detalles
+        Obtiene una compra por ID. Opcionalmente valida que pertenezca a la sucursal.
         """
-        purchase = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id).first()
+        q = self.db.tenant_query(Purchase).filter(Purchase.id == purchase_id)
+        if branch_id:
+            q = q.filter(Purchase.branch_id == branch_id)
+        purchase = q.first()
         if not purchase:
             raise HTTPException(status_code=404, detail="Compra no encontrada")
         return purchase
 
-    def list_purchases(self, state: str = None) -> list[Purchase]:
+    def list_purchases(self, state: str = None, branch_id=None) -> list[Purchase]:
         """
-        Lista todas las compras, opcionalmente filtradas por estado
+        Lista compras filtradas por sucursal (y opcionalmente por estado).
         """
         query = self.db.tenant_query(Purchase)
-        
+
+        if branch_id:
+            query = query.filter(Purchase.branch_id == branch_id)
+
         if state:
             try:
                 state_enum = PurchaseState[state.upper()]
                 query = query.filter(Purchase.state == state_enum)
             except KeyError:
                 raise HTTPException(status_code=400, detail=f"Estado inválido: {state}")
-        
+
         return query.order_by(Purchase.date_created.desc()).all()
 
     def update_purchase(self, purchase_id: int, data: PurchaseUpdate) -> Purchase:

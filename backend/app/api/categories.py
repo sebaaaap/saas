@@ -56,6 +56,17 @@ def create_category(
     db.refresh(db_obj)
     return db_obj
 
+def _build_full_path(cat, cat_map):
+    """Construye la ruta completa de una categoría navegando hacia sus padres."""
+    path = []
+    curr = cat
+    visited = set()
+    while curr and curr.id not in visited:
+        visited.add(curr.id)
+        path.append(curr.name)
+        curr = cat_map.get(curr.parent_id) if curr.parent_id else None
+    return " / ".join(reversed(path))
+
 @router.get("/", response_model=List[CategoryResponse])
 def list_categories(
     db: TenantSession = Depends(get_tenant_session),
@@ -81,8 +92,19 @@ def list_categories(
             
     if needs_commit:
         db.commit()
-        
-    return categories
+
+    # Construir mapa y retornar dicts explícitos con full_path
+    cat_map = {c.id: c for c in categories}
+    return [
+        {
+            "id": str(cat.id),
+            "name": cat.name,
+            "color": cat.color,
+            "parent_id": str(cat.parent_id) if cat.parent_id else None,
+            "full_path": _build_full_path(cat, cat_map),
+        }
+        for cat in categories
+    ]
 
 @router.put("/{category_id}", response_model=CategoryResponse)
 def update_category(

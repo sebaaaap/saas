@@ -29,10 +29,17 @@ class LocationResponse(LocationBase):
     class Config:
         from_attributes = True
 
+class ProductSupplierInfo(BaseModel):
+    supplier_id: UUID
+    supplier_code: str
+    
+    class Config:
+        from_attributes = True
+
 class ProductBase(BaseModel):
     name: str
     internal_reference: Optional[str] = None
-    barcode: str
+    barcode: Optional[str] = None
     price: Decimal
     cost: Decimal
     uom: str = "unidades" 
@@ -43,6 +50,7 @@ class ProductBase(BaseModel):
     category_id: Optional[UUID] = None
     is_variable_consumption: bool = False
     default_consumption_rate: Decimal = Decimal('1.0')
+    suppliers_info: List[ProductSupplierInfo] = []
 
 class ProductCreateWithLocation(ProductBase):
     pass

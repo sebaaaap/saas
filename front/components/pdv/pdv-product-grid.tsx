@@ -20,14 +20,7 @@ export function PdvProductGrid({
   searchQuery,
   onSearchChange,
 }: PdvProductGridProps) {
-  const filteredProducts = products.filter((product) => {
-    const matchesCategory =
-      selectedCategoryId === "all" || product.categoryId === selectedCategoryId
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.barcode?.includes(searchQuery)
-    return matchesCategory && matchesSearch
-  })
+  const filteredProducts = products
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">

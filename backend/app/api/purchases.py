@@ -23,22 +23,23 @@ def create_purchase(
     """
     service = PurchaseService(db)
     purchase = service.create_purchase(data)
-    
+
+    # Asignar la sucursal activa a la compra recién creada
     if branch_id:
         purchase.branch_id = branch_id
         db.commit()
-    
-    # Calcular subtotales para la respuesta
-    items_response = []
-    for item in purchase.items:
-        items_response.append(PurchaseItemResponse(
+
+    items_response = [
+        PurchaseItemResponse(
             id=item.id,
             product_id=item.product_id,
             quantity=item.quantity,
             unit_cost=item.unit_cost,
             subtotal=item.quantity * item.unit_cost
-        ))
-    
+        )
+        for item in purchase.items
+    ]
+
     return PurchaseResponse(
         id=purchase.id,
         date_created=purchase.date_created,
@@ -56,7 +57,8 @@ def create_purchase(
 async def upload_sii_excel(
     file: UploadFile = File(...),
     db: TenantSession = Depends(get_tenant_session),
-    current_user = Depends(check_roles(["admin", "inventario"]))
+    current_user = Depends(check_roles(["admin", "inventario"])),
+    branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     """
     Parsea el Excel de Libro de Compras SII.
@@ -162,12 +164,14 @@ async def upload_sii_excel(
     # Recopilar todos los folios que vienen en el archivo
     all_folios = [inv["invoice_number"] for inv in invoices if inv["invoice_number"] not in ("", "nan")]
 
-    existing_purchases = (
+    existing_purchases_q = (
         db.tenant_query(Purchase.invoice_number)
         .filter(Purchase.invoice_number.in_(all_folios))
         .filter(Purchase.state != PurchaseState.CANCELLED)
-        .all()
     )
+    if branch_id:
+        existing_purchases_q = existing_purchases_q.filter(Purchase.branch_id == branch_id)
+    existing_purchases = existing_purchases_q.all()
     already_imported_folios = {row[0] for row in existing_purchases}
 
     # ── 4. Agrupar por proveedor y anotar estado ─────────────────────────────
@@ -195,110 +199,99 @@ async def upload_sii_excel(
             }
         suppliers_map[rut]["invoices"].append(inv)
 
+    # Añadir branch_id a cada factura para que el front lo incluya al confirmar
+    for inv in invoices:
+        inv["branch_id"] = str(branch_id) if branch_id else None
+
     return {"suppliers": list(suppliers_map.values())}
 
 
 @router.get("/", response_model=List[PurchaseResponse])
-
 def list_purchases(
     state: Optional[str] = Query(None, description="Filtrar por estado: DRAFT, CONFIRMED, CANCELLED"),
     db: TenantSession = Depends(get_tenant_session),
-    current_user = Depends(check_roles(["admin", "inventario"]))
+    current_user = Depends(check_roles(["admin", "inventario"])),
+    branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
 ):
     """
-    Lista todas las compras, opcionalmente filtradas por estado.
+    Lista compras de la sucursal activa, opcionalmente filtradas por estado.
     """
     service = PurchaseService(db)
-    purchases = service.list_purchases(state=state)
-    
-    result = []
-    for purchase in purchases:
-        items_response = []
-        for item in purchase.items:
-            items_response.append(PurchaseItemResponse(
+    purchases = service.list_purchases(state=state, branch_id=branch_id)
+
+    return [
+        PurchaseResponse(
+            id=p.id,
+            date_created=p.date_created,
+            supplier_id=p.supplier_id,
+            invoice_number=p.invoice_number,
+            subtotal_net=p.subtotal_net,
+            tax_amount=p.tax_amount,
+            total_cost=p.total_cost,
+            state=p.state.name,
+            notes=p.notes,
+            items=[
+                PurchaseItemResponse(
+                    id=item.id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    unit_cost=item.unit_cost,
+                    subtotal=item.quantity * item.unit_cost
+                )
+                for item in p.items
+            ]
+        )
+        for p in purchases
+    ]
+
+@router.get("/{purchase_id}", response_model=PurchaseResponse)
+def get_purchase(
+    purchase_id: UUID,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(check_roles(["admin", "inventario"])),
+    branch_id: Optional[UUID] = Header(None, alias="X-Branch-ID")
+):
+    """
+    Obtiene los detalles de una compra de la sucursal activa.
+    """
+    service = PurchaseService(db)
+    purchase = service.get_purchase(purchase_id, branch_id=branch_id)
+
+    return PurchaseResponse(
+        id=purchase.id,
+        date_created=purchase.date_created,
+        supplier_id=purchase.supplier_id,
+        invoice_number=purchase.invoice_number,
+        subtotal_net=purchase.subtotal_net,
+        tax_amount=purchase.tax_amount,
+        total_cost=purchase.total_cost,
+        state=purchase.state.name,
+        notes=purchase.notes,
+        items=[
+            PurchaseItemResponse(
                 id=item.id,
                 product_id=item.product_id,
                 quantity=item.quantity,
                 unit_cost=item.unit_cost,
                 subtotal=item.quantity * item.unit_cost
-            ))
-        
-        result.append(PurchaseResponse(
-            id=purchase.id,
-            date_created=purchase.date_created,
-            supplier_id=purchase.supplier_id,
-            invoice_number=purchase.invoice_number,
-            subtotal_net=purchase.subtotal_net,
-            tax_amount=purchase.tax_amount,
-            total_cost=purchase.total_cost,
-            state=purchase.state.name,
-            notes=purchase.notes,
-            items=items_response
-        ))
-    
-    return result
-
-@router.get("/{purchase_id}", response_model=PurchaseResponse)
-def get_purchase(
-    purchase_id: UUID, 
-    db: TenantSession = Depends(get_tenant_session),
-    current_user = Depends(check_roles(["admin", "inventario"]))
-):
-    """
-    Obtiene los detalles de una compra específica.
-    """
-    service = PurchaseService(db)
-    purchase = service.get_purchase(purchase_id)
-    
-    items_response = []
-    for item in purchase.items:
-        items_response.append(PurchaseItemResponse(
-            id=item.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
-            unit_cost=item.unit_cost,
-            subtotal=item.quantity * item.unit_cost
-        ))
-    
-    return PurchaseResponse(
-        id=purchase.id,
-        date_created=purchase.date_created,
-        supplier_id=purchase.supplier_id,
-        invoice_number=purchase.invoice_number,
-        subtotal_net=purchase.subtotal_net,
-        tax_amount=purchase.tax_amount,
-        total_cost=purchase.total_cost,
-        state=purchase.state.name,
-        notes=purchase.notes,
-        items=items_response
+            )
+            for item in purchase.items
+        ]
     )
 
 @router.post("/{purchase_id}/confirm", response_model=PurchaseResponse)
 def confirm_purchase(
-    purchase_id: UUID, 
+    purchase_id: UUID,
     db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
     """
-    Confirma una compra:
-    - Cambia el estado a CONFIRMADO
-    - Actualiza el costo de los productos
-    - Genera movimiento de inventario
-    - Incrementa el stock
+    Confirma una compra: cambia estado, actualiza costos, genera movimiento e incrementa stock.
+    La sucursal se toma directamente de la compra (ya fue asignada al crearla).
     """
     service = PurchaseService(db)
     purchase = service.confirm_purchase(purchase_id)
-    
-    items_response = []
-    for item in purchase.items:
-        items_response.append(PurchaseItemResponse(
-            id=item.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
-            unit_cost=item.unit_cost,
-            subtotal=item.quantity * item.unit_cost
-        ))
-    
+
     return PurchaseResponse(
         id=purchase.id,
         date_created=purchase.date_created,
@@ -309,12 +302,21 @@ def confirm_purchase(
         total_cost=purchase.total_cost,
         state=purchase.state.name,
         notes=purchase.notes,
-        items=items_response
+        items=[
+            PurchaseItemResponse(
+                id=item.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit_cost=item.unit_cost,
+                subtotal=item.quantity * item.unit_cost
+            )
+            for item in purchase.items
+        ]
     )
 
 @router.post("/{purchase_id}/cancel", response_model=PurchaseResponse)
 def cancel_purchase(
-    purchase_id: UUID, 
+    purchase_id: UUID,
     db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin"]))
 ):
@@ -323,17 +325,7 @@ def cancel_purchase(
     """
     service = PurchaseService(db)
     purchase = service.cancel_purchase(purchase_id)
-    
-    items_response = []
-    for item in purchase.items:
-        items_response.append(PurchaseItemResponse(
-            id=item.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
-            unit_cost=item.unit_cost,
-            subtotal=item.quantity * item.unit_cost
-        ))
-    
+
     return PurchaseResponse(
         id=purchase.id,
         date_created=purchase.date_created,
@@ -344,13 +336,22 @@ def cancel_purchase(
         total_cost=purchase.total_cost,
         state=purchase.state.name,
         notes=purchase.notes,
-        items=items_response
+        items=[
+            PurchaseItemResponse(
+                id=item.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit_cost=item.unit_cost,
+                subtotal=item.quantity * item.unit_cost
+            )
+            for item in purchase.items
+        ]
     )
 
 @router.patch("/{purchase_id}", response_model=PurchaseResponse)
 def update_purchase(
-    purchase_id: UUID, 
-    data: PurchaseUpdate, 
+    purchase_id: UUID,
+    data: PurchaseUpdate,
     db: TenantSession = Depends(get_tenant_session),
     current_user = Depends(check_roles(["admin", "inventario"]))
 ):
@@ -359,17 +360,7 @@ def update_purchase(
     """
     service = PurchaseService(db)
     purchase = service.update_purchase(purchase_id, data)
-    
-    items_response = []
-    for item in purchase.items:
-        items_response.append(PurchaseItemResponse(
-            id=item.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
-            unit_cost=item.unit_cost,
-            subtotal=item.quantity * item.unit_cost
-        ))
-    
+
     return PurchaseResponse(
         id=purchase.id,
         date_created=purchase.date_created,
@@ -380,5 +371,14 @@ def update_purchase(
         total_cost=purchase.total_cost,
         state=purchase.state.name,
         notes=purchase.notes,
-        items=items_response
+        items=[
+            PurchaseItemResponse(
+                id=item.id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit_cost=item.unit_cost,
+                subtotal=item.quantity * item.unit_cost
+            )
+            for item in purchase.items
+        ]
     )

@@ -44,7 +44,9 @@ interface CatalogProduct {
     id: string;
     name: string;
     barcode: string;
+    internal_reference?: string;
     cost: number;
+    suppliers_info?: { supplier_id: string; supplier_code: string }[];
 }
 
 interface Props {
@@ -87,12 +89,23 @@ export function SIIImportModal({ onClose, onImported }: Props) {
 
     // ── Persistence ─────────────────────────────────────────────────────────
 
+    const getMatch = (it: SIIItem) => {
+        return catalog[it.code.trim()] || catalog[it.name.trim().toUpperCase()];
+    };
+
     const refreshCatalog = async () => {
         try {
             const catRes = await api.get("/products/");
             const catMap: Record<string, CatalogProduct> = {};
             for (const p of catRes.data) {
                 if (p.barcode) catMap[String(p.barcode).trim()] = p;
+                if (p.internal_reference) catMap[String(p.internal_reference).trim()] = p;
+                if (p.name) catMap[String(p.name).trim().toUpperCase()] = p;
+                if (p.suppliers_info) {
+                    for (const info of p.suppliers_info) {
+                        catMap[String(info.supplier_code).trim()] = p;
+                    }
+                }
             }
             setCatalog(catMap);
         } catch (e) {
@@ -160,6 +173,13 @@ export function SIIImportModal({ onClose, onImported }: Props) {
             const catMap: Record<string, CatalogProduct> = {};
             for (const p of catRes.data) {
                 if (p.barcode) catMap[String(p.barcode).trim()] = p;
+                if (p.internal_reference) catMap[String(p.internal_reference).trim()] = p;
+                if (p.name) catMap[String(p.name).trim().toUpperCase()] = p;
+                if (p.suppliers_info) {
+                    for (const info of p.suppliers_info) {
+                        catMap[String(info.supplier_code).trim()] = p;
+                    }
+                }
             }
             setCatalog(catMap);
 
@@ -197,13 +217,16 @@ export function SIIImportModal({ onClose, onImported }: Props) {
         setIgnoredItems(p => ({ ...p, [pKey]: !p[pKey] }));
     };
 
-    const handleCreateProduct = async (it: SIIItem, invKey: string, idx: number) => {
+    const handleCreateProduct = async (it: SIIItem, inv: SIIInvoice, idx: number) => {
+        const invKey = inv.invoice_number;
         const pKey = `${invKey}_${idx}`;
         setCreatingProduct(p => ({ ...p, [pKey]: true }));
         try {
             const res = await api.post("/products/", {
                 name: it.name,
-                barcode: String(it.code).trim(),
+                barcode: "", // El backend autogenerará "200..."
+                supplier_id: inv.supplier_id,
+                supplier_code: String(it.code).trim(),
                 cost: it.price || 0,
                 price: 0,
                 uom: "unidades",
@@ -212,7 +235,12 @@ export function SIIImportModal({ onClose, onImported }: Props) {
                 min_stock: 5,
             });
             const newProd = res.data;
-            setCatalog(prev => ({ ...prev, [String(newProd.barcode).trim()]: newProd }));
+            setCatalog(prev => {
+                const updated = { ...prev };
+                if (newProd.barcode) updated[String(newProd.barcode).trim()] = newProd;
+                updated[String(it.code).trim()] = newProd; // Mapear temporalmente en el catálogo
+                return updated;
+            });
         } catch (e: any) {
             alert("Error al crear producto: " + (e.response?.data?.detail ?? e.message));
         } finally {
@@ -230,10 +258,10 @@ export function SIIImportModal({ onClose, onImported }: Props) {
             const matchedItems = inv.items
                 .filter((it, idx) => {
                     const isIgnored = ignoredItems[`${key}_${idx}`];
-                    return !isIgnored && catalog[it.code.trim()] && it.quantity != null;
+                    return !isIgnored && getMatch(it) && it.quantity != null;
                 })
                 .map((it) => ({
-                    product_id: catalog[it.code.trim()].id,
+                    product_id: getMatch(it)!.id,
                     quantity: Math.round(it.quantity!),
                     unit_cost: it.price ?? 0,
                 }));
@@ -273,7 +301,7 @@ export function SIIImportModal({ onClose, onImported }: Props) {
             ...inv.items.map(
                 (it, i) => {
                     const isIgnored = ignoredItems[`${inv.invoice_number}_${i}`];
-                    const matched = catalog[it.code.trim()];
+                    const matched = getMatch(it);
                     const matchTag = isIgnored ? `[ignorado]` : (matched ? `[✓ ${matched.name}]` : `[sin match]`);
                     return `${i + 1}. [${it.code}] ${it.name} ${matchTag} | Cant: ${it.quantity} | P.Unit: ${fmt(it.price)} | Dcto: ${it.discount_pct != null ? `${it.discount_pct}%` : "—"} | Total: ${fmt(it.final_price)}`;
                 }
@@ -350,7 +378,7 @@ export function SIIImportModal({ onClose, onImported }: Props) {
                         <span className="text-sm font-bold text-emerald-600">
                             {parsed.suppliers.reduce((acc, s) => 
                                 acc + s.invoices.reduce((acc2, inv) => 
-                                    acc2 + inv.items.filter(it => catalog[it.code.trim()]).length, 0), 0
+                                    acc2 + inv.items.filter(it => getMatch(it)).length, 0), 0
                             )} ítems
                         </span>
                     </div>
@@ -484,8 +512,8 @@ export function SIIImportModal({ onClose, onImported }: Props) {
                                                 const isImporting = importing[invKey];
                                                 const isImported = imported[invKey];
                                                 const isAlreadyImported = inv.already_imported && !isImported;
-                                                const matchedCount = inv.items.filter(it => catalog[it.code.trim()]).length;
-                                                const canImport = inv.items.every((it, idx) => catalog[it.code.trim()] || ignoredItems[`${invKey}_${idx}`]);
+                                                const matchedCount = inv.items.filter(it => getMatch(it)).length;
+                                                const canImport = inv.items.every((it, idx) => getMatch(it) || ignoredItems[`${invKey}_${idx}`]);
 
                                                 return (
                                                     <div key={invKey} className="bg-muted/20">
@@ -599,7 +627,7 @@ export function SIIImportModal({ onClose, onImported }: Props) {
                                                                             {inv.items.map((item, i) => {
                                                                                 const isIgnored = ignoredItems[`${invKey}_${i}`];
                                                                                 const isCreating = creatingProduct[`${invKey}_${i}`];
-                                                                                const matched = catalog[item.code.trim()];
+                                                                                const matched = getMatch(item);
                                                                                 return (
                                                                                     <tr key={i} className={`border-b border-border/50 last:border-b-0 hover:bg-muted/20 ${isIgnored ? 'opacity-50' : ''}`}>
                                                                                         <td className="px-3 py-2 font-mono text-[11px] text-primary font-semibold">
@@ -619,7 +647,7 @@ export function SIIImportModal({ onClose, onImported }: Props) {
                                                                                                 </div>
                                                                                             ) : (
                                                                                                 <div className="flex items-center gap-2 mt-1.5">
-                                                                                                    <button onClick={(e) => { e.stopPropagation(); handleCreateProduct(item, invKey, i); }} disabled={isCreating} className="text-[10px] bg-primary text-primary-foreground px-2 py-1 rounded shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50">
+                                                                                                    <button onClick={(e) => { e.stopPropagation(); handleCreateProduct(item, inv, i); }} disabled={isCreating} className="text-[10px] bg-primary text-primary-foreground px-2 py-1 rounded shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50">
                                                                                                         {isCreating ? "Creando..." : "+ Crear Base"}
                                                                                                     </button>
                                                                                                     <button onClick={(e) => { e.stopPropagation(); toggleIgnoreItem(invKey, i); }} className="text-[10px] bg-muted border border-border text-foreground px-2 py-1 rounded shadow-sm hover:bg-muted/80 transition-colors">

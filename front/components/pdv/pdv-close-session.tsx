@@ -60,42 +60,38 @@ export function PdvCloseSession({
   )
 
   const stats = useMemo(() => {
-    let cashSales = 0
-    let cardSales = 0
-    let transferSales = 0
+    const salesByMethod: Record<string, { name: string, amount: number }> = {
+      cash: { name: "Efectivo", amount: 0 },
+      card: { name: "Tarjeta", amount: 0 },
+      transfer: { name: "Transferencia", amount: 0 },
+    }
     let totalRefunds = 0
     let totalOrdersCount = 0
 
     processedOrders.forEach(o => {
-      const type = o.paymentMethod?.type
-      // Castear a Number porque Numeric(12,2) de Postgres llega como string en JSON
+      const type = o.paymentMethod?.type || "cash"
+      const name = o.paymentMethod?.name || "Efectivo"
       const amount = Number(o.total) || 0
 
-      // Contamos como "orden" solo las ventas originales (monto positivo)
       if (amount > 0) totalOrdersCount++
+      if (amount < 0) totalRefunds += Math.abs(amount)
 
-      if (amount < 0) {
-        totalRefunds += Math.abs(amount)
+      if (!salesByMethod[type]) {
+        salesByMethod[type] = { name, amount: 0 }
       }
-
-      if (type === "cash") cashSales += amount
-      else if (type === "card") cardSales += amount
-      else if (type === "transfer") transferSales += amount
-      else {
-        // Por defecto si no hay tipo, asumimos efectivo para no perder el dinero en el arqueo
-        cashSales += amount
-      }
+      salesByMethod[type].amount += amount
     })
 
-    const totalSales = cashSales + cardSales + transferSales
+    const cashSales = salesByMethod["cash"].amount
+    const totalSales = Object.values(salesByMethod).reduce((acc, val) => acc + val.amount, 0)
+    
     // Castear openingBalance también porque viene de Numeric(12,2) → string
     const openingBalance = Number(session?.openingBalance) || 0
     const expectedCash = openingBalance + cashSales
 
     return {
+      salesByMethod,
       cashSales,
-      cardSales,
-      transferSales,
       totalRefunds,
       totalSales,
       totalOrders: totalOrdersCount,
@@ -161,27 +157,20 @@ export function PdvCloseSession({
               {/* Payment Summary */}
               <div className="rounded-lg border border-border p-3 space-y-2">
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Desglose</p>
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    {getPaymentIcon("cash")}
-                    <span>Efectivo</span>
-                  </div>
-                  <span className="font-bold text-foreground">${toNum(stats.cashSales).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    {getPaymentIcon("card")}
-                    <span>Tarjeta</span>
-                  </div>
-                  <span className="font-bold text-foreground">${toNum(stats.cardSales).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    {getPaymentIcon("transfer")}
-                    <span>Transferencia</span>
-                  </div>
-                  <span className="font-bold text-foreground">${toNum(stats.transferSales).toFixed(2)}</span>
-                </div>
+                {Object.entries(stats.salesByMethod).map(([type, data]) => {
+                  // Hide non-default payment methods if they are $0 to keep UI clean
+                  if (data.amount === 0 && type !== 'cash' && type !== 'card' && type !== 'transfer') return null;
+                  
+                  return (
+                    <div key={type} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        {getPaymentIcon(type)}
+                        <span>{data.name}</span>
+                      </div>
+                      <span className="font-bold text-foreground">${toNum(data.amount).toFixed(2)}</span>
+                    </div>
+                  )
+                })}
                 {stats.totalRefunds > 0 && (
                   <div className="flex items-center justify-between text-xs border-t border-dashed border-border pt-2">
                     <span className="text-destructive">Reembolsos</span>

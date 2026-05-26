@@ -21,6 +21,8 @@ export interface Category {
   name: string
   icon: string
   color: string
+  parent_id?: string | null
+  full_path?: string
 }
 
 export interface OrderLine {
