@@ -239,6 +239,11 @@ export function BackendDashboard({ onNavigate }: BackendDashboardProps) {
             </div>
           )}
         </div>
+        
+        {/* Footer */}
+        <div className="mt-12 mb-4 text-center text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
+          Powered by VankaiLabs
+        </div>
       </div>
     </div>
   )

@@ -152,6 +152,7 @@ export default function LoginPage() {
                 {/* Footer */}
                 <div className="text-center mt-6 text-xs text-slate-500 animate-in fade-in duration-500 delay-200">
                     <p>© 2026 VKI. Sistema de Gestión Empresarial.</p>
+                    <p className="mt-1.5 font-semibold text-slate-400">Powered by VankaiLabs</p>
                 </div>
             </div>
         </div>
