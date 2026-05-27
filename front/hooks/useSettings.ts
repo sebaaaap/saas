@@ -40,9 +40,19 @@ export function useSettings() {
             try {
                 const res = await api.get('/companies/me');
                 const data = res.data;
+                
+                let extraSettings = {};
+                try {
+                    const localData = localStorage.getItem('businessSettings_extra');
+                    if (localData) {
+                        extraSettings = JSON.parse(localData);
+                    }
+                } catch (e) { }
+
                 // Map the DB fields to the hook's interface
                 setSettings({
                     ...defaultSettings,
+                    ...extraSettings,
                     businessName: data.name || '',
                     description: data.business_name || '',
                     taxId: data.tax_id || '',
