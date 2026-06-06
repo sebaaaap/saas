@@ -33,9 +33,17 @@ export function SuppliersPage() {
         fetchSuppliers();
     }, []);
 
+    const getHeaders = () => {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        return {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        };
+    };
+
     const fetchSuppliers = async () => {
         try {
-            const res = await fetch(`${API_BASE}/suppliers/`);
+            const res = await fetch(`${API_BASE}/suppliers/`, { headers: getHeaders() });
             if (res.ok) setSuppliers(await res.json());
         } catch (e) {
             console.error("Error fetching suppliers", e);
@@ -85,7 +93,7 @@ export function SuppliersPage() {
 
             const res = await fetch(url, {
                 method,
-                headers: { "Content-Type": "application/json" },
+                headers: getHeaders(),
                 body: JSON.stringify(body),
             });
 
@@ -105,7 +113,7 @@ export function SuppliersPage() {
     const handleDelete = async (id: string) => {
         if (!confirm("¿Estás seguro de eliminar este proveedor?")) return;
         try {
-            const res = await fetch(`${API_BASE}/suppliers/${id}`, { method: "DELETE" });
+            const res = await fetch(`${API_BASE}/suppliers/${id}`, { method: "DELETE", headers: getHeaders() });
             if (res.ok) {
                 fetchSuppliers();
             } else {
