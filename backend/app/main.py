@@ -17,8 +17,23 @@ app = FastAPI(
     description="Sistema POS Híbrido - Local y Web"
 )
 
-# CORS
-origins = [str(o) for o in settings.CORS_ORIGINS] if settings.CORS_ORIGINS else ["*"]
+# CORS — merge env origins + always-required origins
+ALWAYS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://saas-self-alpha-78.vercel.app",
+    "https://saas-git-main-sebaaaps-projects.vercel.app",
+    "https://saas-c4br9u9tg-sebaaaps-projects.vercel.app",
+]
+
+env_origins = [str(o) for o in settings.CORS_ORIGINS] if settings.CORS_ORIGINS else []
+
+# Si el env tiene "*" o está vacío, usar wildcard; si no, combinar ambas listas
+if "*" in env_origins or not env_origins:
+    origins = ["*"]
+else:
+    origins = list(set(env_origins + ALWAYS_ALLOWED_ORIGINS))
+
 print(f"[CORS] Allowed origins: {origins}")
 
 app.add_middleware(

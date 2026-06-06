@@ -24,6 +24,7 @@ class Settings(BaseSettings):
         "https://saas-self-alpha-78.vercel.app",
         "https://saas-git-main-sebaaaps-projects.vercel.app",
         "https://saas-c4br9u9tg-sebaaaps-projects.vercel.app",
+        "https://*.vercel.app",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
