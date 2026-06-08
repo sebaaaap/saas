@@ -266,13 +266,15 @@ function SalesReport() {
 
     const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
     const [saleDetails, setSaleDetails] = useState<any>(null);
+    const [rowMeta, setRowMeta] = useState<any>(null); // Datos de la fila (cajero, sucursal, metodo)
     const [isLoadingSale, setIsLoadingSale] = useState(false);
 
-    const handleRowClick = async (id: string) => {
-        setSelectedSaleId(id);
+    const handleRowClick = async (transaction: any) => {
+        setSelectedSaleId(transaction.id);
+        setRowMeta(transaction);
         setIsLoadingSale(true);
         try {
-            const response = await api.get(`/pos/sales/${id}`);
+            const response = await api.get(`/pos/sales/${transaction.id}`);
             setSaleDetails(response.data);
         } catch (e) {
             toast({ title: "Error", description: "No se pudo cargar el detalle", variant: "destructive" });
@@ -541,7 +543,7 @@ function SalesReport() {
                     <TableBody>
                         {recent_transactions
                             .map((t: any) => (
-                            <TableRow key={t.id} onClick={() => handleRowClick(t.id)} className={`cursor-pointer hover:bg-muted/50 transition-colors ${t.estado === 'reembolsado' || t.estado === 'refunded' ? 'bg-red-50/50 opacity-80' : ''}`}>
+                            <TableRow key={t.id} onClick={() => handleRowClick(t)} className={`cursor-pointer hover:bg-muted/50 transition-colors ${t.estado === 'reembolsado' || t.estado === 'refunded' ? 'bg-red-50/50 opacity-80' : ''}`}>
                                 <TableCell className="font-mono text-xs">{t.id}</TableCell>
                                 <TableCell className="text-sm">{t.cajero}</TableCell>
                                 <TableCell>
@@ -579,6 +581,7 @@ function SalesReport() {
                 if (!open) {
                     setSelectedSaleId(null);
                     setSaleDetails(null);
+                    setRowMeta(null);
                 }
             }}>
                 <DialogContent className="max-w-md md:max-w-2xl">
@@ -595,10 +598,12 @@ function SalesReport() {
                     ) : saleDetails ? (
                         <div className="space-y-4 py-4">
                             <div className="grid grid-cols-2 gap-2 text-sm">
-                                <div><span className="text-muted-foreground font-semibold">Cajero:</span> {saleDetails.cajero || saleDetails.usuario || "N/A"}</div>
-                                <div><span className="text-muted-foreground font-semibold">Fecha:</span> {saleDetails.created_at || saleDetails.fecha ? new Date(saleDetails.created_at || saleDetails.fecha).toLocaleString() : "N/A"}</div>
-                                <div><span className="text-muted-foreground font-semibold">Total:</span> {fmt(saleDetails.total || 0)}</div>
-                                <div><span className="text-muted-foreground font-semibold">Método:</span> {saleDetails.metodo_pago || saleDetails.metodo || "N/A"}</div>
+                                <div><span className="text-muted-foreground font-semibold">Cajero:</span> {rowMeta?.cajero || "N/A"}</div>
+                                <div><span className="text-muted-foreground font-semibold">Fecha:</span> {saleDetails.date_created ? new Date(saleDetails.date_created).toLocaleString("es-CL") : "N/A"}</div>
+                                <div><span className="text-muted-foreground font-semibold">Total:</span> {fmt(Number(saleDetails.total_amount) || 0)}</div>
+                                <div><span className="text-muted-foreground font-semibold">Método:</span> {rowMeta?.metodo || saleDetails.payment_method || "N/A"}</div>
+                                <div><span className="text-muted-foreground font-semibold">Sucursal:</span> {rowMeta?.sucursal || "Casa Matriz"}</div>
+                                <div><span className="text-muted-foreground font-semibold">Comprobante:</span> {saleDetails.document_type || "boleta"}</div>
                             </div>
                             <div>
                                 <h4 className="font-semibold text-sm mb-2 border-b pb-1">Productos</h4>
@@ -615,10 +620,10 @@ function SalesReport() {
                                         <TableBody>
                                             {(saleDetails.items || []).map((item: any, idx: number) => (
                                                 <TableRow key={idx}>
-                                                    <TableCell className="text-xs">{item.product_name || item.nombre || "Producto"}</TableCell>
-                                                    <TableCell className="text-right text-xs">{item.quantity || item.cantidad || 0}</TableCell>
-                                                    <TableCell className="text-right text-xs">{fmt(item.unit_price || item.precio_unitario || 0)}</TableCell>
-                                                    <TableCell className="text-right text-xs font-semibold">{fmt((item.quantity || item.cantidad || 0) * (item.unit_price || item.precio_unitario || 0))}</TableCell>
+                                                    <TableCell className="text-xs">{item.product?.name || item.product_name || item.nombre || "—"}</TableCell>
+                                                    <TableCell className="text-right text-xs">{Number(item.quantity) || 0}</TableCell>
+                                                    <TableCell className="text-right text-xs">{fmt(Number(item.unit_price) || 0)}</TableCell>
+                                                    <TableCell className="text-right text-xs font-semibold">{fmt(Number(item.subtotal) || 0)}</TableCell>
                                                 </TableRow>
                                             ))}
                                             {(!saleDetails.items || saleDetails.items.length === 0) && (
