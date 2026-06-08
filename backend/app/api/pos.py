@@ -197,9 +197,15 @@ def mark_sale_as_paid(ticket_id: UUID, db: TenantSession = Depends(get_tenant_se
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sales/{ticket_id}", response_model=SaleResponse)
-def get_sale(ticket_id: UUID, db: TenantSession = Depends(get_tenant_session)):
-    """Obtiene una venta por ID"""
-    ticket = POSService.get_sale_by_id(db, ticket_id)
+def get_sale(ticket_id: str, db: TenantSession = Depends(get_tenant_session)):
+    """Obtiene una venta por ID o ticket_number"""
+    try:
+        uuid_obj = UUID(ticket_id)
+        ticket = POSService.get_sale_by_id(db, uuid_obj)
+    except ValueError:
+        from app.models.base import Ticket
+        ticket = db.tenant_query(Ticket).filter(Ticket.ticket_number == ticket_id).first()
+        
     if not ticket:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
     return ticket
