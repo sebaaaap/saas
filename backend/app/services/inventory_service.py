@@ -352,16 +352,18 @@ class InventoryService:
                            f"Asegúrate de que el producto existe y tiene stock."
                 )
 
-            if (source_p.stock_quantity or 0) < item_req.quantity:
+            from decimal import Decimal
+            current_stock = Decimal(str(source_p.stock_quantity or 0))
+            if current_stock < item_req.quantity:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Stock insuficiente para '{source_p.name}'. "
-                           f"Disponible: {source_p.stock_quantity}, solicitado: {item_req.quantity}"
+                           f"Disponible: {current_stock}, solicitado: {item_req.quantity}"
                 )
 
             # ── Restar stock en origen ───────────────────────────────────────────
-            stock_before_exit = source_p.stock_quantity
-            source_p.stock_quantity -= item_req.quantity
+            stock_before_exit = current_stock
+            source_p.stock_quantity = current_stock - item_req.quantity
 
             self.db._db.add(InventoryMovementItem(
                 movement_id=exit_movement.id,
@@ -421,8 +423,8 @@ class InventoryService:
                 self.db._db.flush()
 
             # ── Sumar stock en destino ───────────────────────────────────────────
-            stock_before_entry = target_p.stock_quantity
-            target_p.stock_quantity += item_req.quantity
+            stock_before_entry = Decimal(str(target_p.stock_quantity or 0))
+            target_p.stock_quantity = stock_before_entry + item_req.quantity
 
             self.db._db.add(InventoryMovementItem(
                 movement_id=entry_movement.id,
