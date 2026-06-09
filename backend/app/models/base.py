@@ -185,8 +185,8 @@ class Product(TenantModel):
     category_id = Column(UUID(as_uuid=True), ForeignKey("product_categories.id"), nullable=True)
     category = Column(String, index=True, nullable=True)
     
-    stock_quantity = Column(Numeric(12, 2), default=0, nullable=False) 
-    min_stock = Column(Numeric(12, 2), default=5, nullable=False)
+    stock_quantity = Column(Numeric(12, 4), default=0, nullable=False) 
+    min_stock = Column(Numeric(12, 4), default=5, nullable=False)
     image_path = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     
@@ -344,11 +344,11 @@ class SaleItem(TenantModel):
     ticket_id = Column(UUID(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     
-    quantity = Column(Numeric(12, 2), nullable=False) # Cantidad base vendida
+    quantity = Column(Numeric(12, 4), nullable=False) # Cantidad base vendida
     unit_price = Column(Numeric(12, 2), nullable=False)
     discount_percent = Column(Numeric(12, 2), default=0.0)
     consumption_rate = Column(Numeric(12, 3), default=1.0) # Tasa cobrada
-    stock_reduced = Column(Numeric(12, 3), default=0.0) # Log de trazabilidad del total mermado
+    stock_reduced = Column(Numeric(12, 4), default=0.0) # Log de trazabilidad del total mermado
     subtotal = Column(Numeric(12, 2), nullable=False)
     
     ticket = relationship("Ticket", back_populates="items")
@@ -422,7 +422,7 @@ class PurchaseItem(TenantModel):
     
     purchase_id = Column(UUID(as_uuid=True), ForeignKey("purchases.id"))
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"))
-    quantity = Column(Numeric(12, 2), nullable=False)
+    quantity = Column(Numeric(12, 4), nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=False)
     
     purchase = relationship("Purchase", back_populates="items")
@@ -448,9 +448,9 @@ class InventoryMovementItem(TenantModel):
     movement_id = Column(UUID(as_uuid=True), ForeignKey("inventory_movements.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
     
-    quantity = Column(Numeric(12, 2), nullable=False)
-    stock_before = Column(Numeric(12, 2), nullable=False)
-    stock_after = Column(Numeric(12, 2), nullable=False)
+    quantity = Column(Numeric(12, 4), nullable=False)
+    stock_before = Column(Numeric(12, 4), nullable=False)
+    stock_after = Column(Numeric(12, 4), nullable=False)
     
     movement = relationship("InventoryMovement", back_populates="items")
     product = relationship("Product", back_populates="movement_items")
@@ -500,10 +500,10 @@ class QuoteItem(TenantModel):
     
     quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
-    quantity = Column(Numeric(12, 2), nullable=False)
+    quantity = Column(Numeric(12, 4), nullable=False)
     unit_price = Column(Numeric(12, 2), nullable=False)
     consumption_rate = Column(Numeric(12, 3), default=1.0)
-    stock_reduced = Column(Numeric(12, 3), default=0.0)
+    stock_reduced = Column(Numeric(12, 4), default=0.0)
     subtotal = Column(Numeric(12, 2), nullable=False)
     
     quote = relationship("Quote", back_populates="items")
@@ -593,10 +593,10 @@ class WorkOrderItem(TenantModel):
     
     work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False)
-    quantity = Column(Numeric(12, 2), nullable=False)
+    quantity = Column(Numeric(12, 4), nullable=False)
     unit_price = Column(Numeric(12, 2), nullable=False)
     consumption_rate = Column(Numeric(12, 3), default=1.0)
-    stock_reduced = Column(Numeric(12, 3), default=0.0)
+    stock_reduced = Column(Numeric(12, 4), default=0.0)
     subtotal = Column(Numeric(12, 2), nullable=False)
     done = Column(Boolean, default=False, nullable=False)
     is_paid = Column(Boolean, default=False, nullable=False)
