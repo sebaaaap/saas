@@ -107,6 +107,9 @@ async def import_products(
             internal_ref = str(row.get("referencia interna", "")).strip()
             if pd.isna(internal_ref) or internal_ref.lower() == "nan" or not internal_ref:
                 internal_ref = None
+                
+            materia_prima = str(row.get("materia prima", "no")).strip().lower()
+            is_raw_material = materia_prima in ["si", "sí", "true", "1", "yes"]
             
             # 1. CATEGORIAS (Jerarquía con /)
             cat_obj = None
@@ -204,7 +207,7 @@ async def import_products(
                     category=category_name if cat_obj else None,
                     location_id=loc_obj.id if loc_obj else None,
                     branch_id=branch_id,
-                    is_raw_material=False
+                    is_raw_material=is_raw_material
                 )
                 db.add(product)
                 db.flush()
@@ -222,6 +225,7 @@ async def import_products(
                 if loc_obj:
                     product.location_id = loc_obj.id
                 product.product_type = prod_type
+                product.is_raw_material = is_raw_material
                 
             # Movimiento Inicial Solo si es nuevo y tiene stock inicial
             if prod_type != ProductType.SERVICE and stock > 0 and is_new:
