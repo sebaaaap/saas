@@ -35,7 +35,7 @@ class ProductCreate(BaseModel):
 class BOMLineCreate(BaseModel):
     component_id: UUID
     qty_per_unit: float
-    component_uom: str
+    component_uom: Optional[str] = None  # Si no se manda, se toma del producto componente
 
 class BOMLineRead(BOMLineCreate):
     id: UUID
@@ -421,36 +421,45 @@ def list_products(
             p_type = p_type.value
             
         bom_lines_read = []
-        available_from_bom = float("inf")
-        has_bom = len(primary.bom_lines) > 0
+        available_from_bom = 0.0
+        has_bom = False
         
-        for bom in primary.bom_lines:
-            if bom.is_active:
-                bom_lines_read.append(BOMLineRead(
-                    id=bom.id,
-                    product_id=bom.product_id,
-                    component_id=bom.component_id,
-                    qty_per_unit=float(bom.qty_per_unit),
-                    component_uom=bom.component_uom,
-                    component_name=bom.component.name if bom.component else "?"
-                ))
-                
-                # Calcular cuanto se puede fabricar con el stock actual del componente (en la misma branch)
-                # Buscamos el stock total del componente en la base
-                if bom.component:
-                    comp_stock = float(bom.component.stock_quantity or 0)
-                    qty_per = float(bom.qty_per_unit or 1)
-                    if qty_per > 0:
-                        can_make = comp_stock / qty_per
-                        available_from_bom = min(available_from_bom, can_make)
-                    else:
-                        available_from_bom = 0
-                else:
-                    available_from_bom = 0
+        try:
+            has_bom = len(primary.bom_lines) > 0
+            available_from_bom_calc = float("inf") if has_bom else 0.0
+            
+            for bom in primary.bom_lines:
+                if not bom.is_active:
+                    continue
+                try:
+                    bom_lines_read.append(BOMLineRead(
+                        id=bom.id,
+                        product_id=bom.product_id,
+                        component_id=bom.component_id,
+                        qty_per_unit=float(bom.qty_per_unit or 0),
+                        component_uom=bom.component_uom or "unidades",
+                        component_name=bom.component.name if bom.component else "?"
+                    ))
                     
-        if not has_bom:
-            available_from_bom = 0.0
-        elif available_from_bom == float("inf"):
+                    if bom.component:
+                        comp_stock = float(bom.component.stock_quantity or 0)
+                        qty_per = float(bom.qty_per_unit or 1)
+                        if qty_per > 0:
+                            can_make = comp_stock / qty_per
+                            available_from_bom_calc = min(available_from_bom_calc, can_make)
+                        else:
+                            available_from_bom_calc = 0.0
+                    else:
+                        available_from_bom_calc = 0.0
+                except Exception:
+                    continue
+                    
+            if not has_bom or available_from_bom_calc == float("inf"):
+                available_from_bom = 0.0
+            else:
+                available_from_bom = available_from_bom_calc
+        except Exception:
+            bom_lines_read = []
             available_from_bom = 0.0
             
         # El available qty es la suma del stock propio (por ejemplo devoluciones/cajas sueltas) + lo que se puede hacer
@@ -648,7 +657,7 @@ def add_bom_line(
     
     if existing:
         existing.qty_per_unit = line.qty_per_unit
-        existing.component_uom = line.component_uom
+        existing.component_uom = line.component_uom or component.uom or "unidades"
         existing.is_active = True
         db.commit()
         db.refresh(existing)
@@ -658,7 +667,7 @@ def add_bom_line(
             product_id=product_id,
             component_id=line.component_id,
             qty_per_unit=line.qty_per_unit,
-            component_uom=line.component_uom
+            component_uom=line.component_uom or component.uom or "unidades"
         )
         db.add(bom)
         db.commit()
