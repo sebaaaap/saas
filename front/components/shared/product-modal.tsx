@@ -375,10 +375,10 @@ export function ProductModal({
                           >
                             <option value="">- Selecciona el padre -</option>
                             {allProducts
-                              .filter(p => p.id !== editingId)
+                              .filter(p => p.id !== editingId && p.is_raw_material)
                               .map((p) => (
                                 <option key={p.id} value={p.id}>
-                                  {p.name} {p.is_raw_material ? "(Materia Prima)" : ""}
+                                  {p.name} [{p.uom}]
                                 </option>
                             ))}
                           </select>

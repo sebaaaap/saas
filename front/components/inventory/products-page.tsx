@@ -216,12 +216,24 @@ export function ProductsPage() {
                 productId = res.data?.id;
             }
 
-            // Guardar receta/BOM
-            if (productId && !formData.is_raw_material && formData.bom_component_id) {
-                await api.post(`/products/${productId}/bom`, {
-                    component_id: formData.bom_component_id,
-                    qty_per_unit: parseFloat(formData.bom_qty_per_unit) || 0
-                });
+            // Guardar receta/BOM - estilo Odoo: borra las anteriores y crea nuevas
+            if (productId && !formData.is_raw_material) {
+                // Si hay BOM anterior, eliminarlo
+                const existingProduct = products.find(p => p.id === productId);
+                if (existingProduct?.bom_lines && existingProduct.bom_lines.length > 0) {
+                    for (const line of existingProduct.bom_lines) {
+                        try {
+                            await api.delete(`/products/${productId}/bom/${line.id}`);
+                        } catch { /* ignore */ }
+                    }
+                }
+                // Crear nueva si se seleccionó un padre
+                if (formData.bom_component_id && formData.bom_qty_per_unit) {
+                    await api.post(`/products/${productId}/bom`, {
+                        component_id: formData.bom_component_id,
+                        qty_per_unit: parseFloat(formData.bom_qty_per_unit) || 0
+                    });
+                }
             }
 
             setIsModalOpen(false);
