@@ -461,19 +461,21 @@ export function ProductsPage() {
                                             {product.product_type === "SERVICE" ? (
                                                 <span className="text-sm font-bold text-muted-foreground">-</span>
                                             ) : (() => {
-                                                const qty = (product as any).available_qty ?? product.total_stock;
-                                                const minStock = product.min_stock ?? 5;
-                                                const isLow = qty <= minStock;
                                                 // Formatear con hasta 3 decimales significativos
                                                 const formatQty = (n: number) => {
                                                     if (Number.isInteger(n)) return n.toString();
-                                                    // Hasta 3 decimales, sin ceros finales
                                                     const fixed3 = parseFloat(n.toFixed(3));
                                                     return fixed3.toString();
                                                 };
-                                                const uomLabel = product.uom === 'unidades' ? 'u' : product.uom || 'u';
-                                                // Para materia prima (padre), mostrar barra de progreso visual
                                                 const isParent = product.is_raw_material;
+                                                // Para PADRES: mostrar total_stock (los kg reales)
+                                                // Para DERIVADOS: mostrar available_qty (cuántos se pueden fabricar)
+                                                const qty = isParent 
+                                                    ? product.total_stock 
+                                                    : ((product as any).available_qty ?? product.total_stock);
+                                                const minStock = product.min_stock ?? 5;
+                                                const isLow = qty <= minStock;
+                                                const uomLabel = product.uom === 'unidades' ? 'u' : product.uom || 'u';
                                                 return (
                                                     <div className="flex flex-col items-center gap-1.5 w-full">
                                                         <span

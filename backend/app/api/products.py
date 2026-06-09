@@ -467,7 +467,7 @@ def list_products(
             available_from_bom = 0.0
             
         # El available qty es la suma del stock propio (por ejemplo devoluciones/cajas sueltas) + lo que se puede hacer
-        available_qty = float(total_stock) + int(available_from_bom)
+        available_qty = float(total_stock) + float(available_from_bom)
 
         results.append(ProductAggregatedResponse(
             id=primary.id,
