@@ -108,6 +108,7 @@ class POSService:
                 final_items_to_create = []
 
                 from sqlalchemy.orm import joinedload
+                from app.models.base import ProductBOM
                 for item in sale_data.items:
                     original_product = db.tenant_query(Product).options(
                         joinedload(Product.bom_lines).joinedload(ProductBOM.component)
