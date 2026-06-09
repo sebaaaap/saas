@@ -97,12 +97,12 @@ async def import_products(
                 barcode = raw_barcode
                 
                 
-            price = float(row.get("precio venta") or 0)
-            cost = float(row.get("costo") or 0)
-            stock = float(row.get("stock inicial") or 0)
+            price = float(row.get("precio venta") if pd.notna(row.get("precio venta")) else 0)
+            cost = float(row.get("costo") if pd.notna(row.get("costo")) else 0)
+            stock = float(row.get("stock inicial") if pd.notna(row.get("stock inicial")) else 0)
             category_name = str(row.get("categoria", "")).strip()
             pasillo_path = str(row.get("pasillo", "")).strip()
-            min_stock = float(row.get("stock minimo") or 5)
+            min_stock = float(row.get("stock minimo") if pd.notna(row.get("stock minimo")) else 5)
             
             internal_ref = str(row.get("referencia interna", "")).strip()
             if pd.isna(internal_ref) or internal_ref.lower() == "nan" or not internal_ref:
