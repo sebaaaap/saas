@@ -455,7 +455,7 @@ export function ProductsPage() {
                                                         : 'text-emerald-600'
                                                     }`}
                                                 >
-                                                    {(product as any).available_qty ?? product.total_stock}
+                                                    {(product as any).available_qty ?? product.total_stock} {product.uom === 'unidades' ? 'u' : product.uom || 'u'}
                                                 </span>
                                             )}
                                         </div>

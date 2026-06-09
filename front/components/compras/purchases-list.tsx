@@ -18,6 +18,7 @@ interface Product {
     cost: number;
     stock_quantity: number;
     total_stock?: number;
+    uom?: string;
 }
 
 interface PurchaseItem {
@@ -421,7 +422,7 @@ export function PurchasesList() {
                                             ))}
                                         </select>
                                     </div>
-                                    <div className="col-span-2">
+                                    <div className="col-span-2 relative">
                                         <input
                                             type="number"
                                             className="form-input text-center"
@@ -429,6 +430,11 @@ export function PurchasesList() {
                                             value={newItem.quantity}
                                             onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
                                         />
+                                        {newItem.product_id && (
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                                                {products.find(p => p.id === newItem.product_id)?.uom === 'unidades' ? 'u' : products.find(p => p.id === newItem.product_id)?.uom || ''}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="col-span-3">
                                         <div className="relative">
@@ -471,7 +477,9 @@ export function PurchasesList() {
                                                     <td className="px-5 py-3 font-medium text-foreground text-sm">
                                                         {getProductName(item.product_id)}
                                                     </td>
-                                                    <td className="px-5 py-3 text-center text-sm">{item.quantity}</td>
+                                                    <td className="px-5 py-3 text-center text-sm">
+                                                        {item.quantity} <span className="text-[10px] text-muted-foreground uppercase">{products.find(p => p.id === item.product_id)?.uom === 'unidades' ? 'u' : products.find(p => p.id === item.product_id)?.uom || ''}</span>
+                                                    </td>
                                                     <td className="px-5 py-3 text-right text-sm">${item.unit_cost.toLocaleString()}</td>
                                                     <td className="px-5 py-3 text-right font-bold text-foreground text-sm">
                                                         ${(item.quantity * item.unit_cost).toLocaleString()}
@@ -592,7 +600,9 @@ export function PurchasesList() {
                                                         <td className="px-5 py-3 font-medium text-foreground text-sm">
                                                             {getProductName(item.product_id)}
                                                         </td>
-                                                        <td className="px-5 py-3 text-center text-sm">{item.quantity}</td>
+                                                        <td className="px-5 py-3 text-center text-sm">
+                                                            {item.quantity} <span className="text-[10px] text-muted-foreground uppercase">{products.find(p => p.id === item.product_id)?.uom === 'unidades' ? 'u' : products.find(p => p.id === item.product_id)?.uom || ''}</span>
+                                                        </td>
                                                         <td className="px-5 py-3 text-right text-sm text-muted-foreground">
                                                             ${item.unit_cost.toLocaleString()}
                                                         </td>
