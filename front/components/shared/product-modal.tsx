@@ -163,7 +163,7 @@ export function ProductModal({
             {/* Precios */}
             <FormSection title="Precios">
               <div>
-                <FormLabel>Precio de venta</FormLabel>
+                <FormLabel>Precio de venta {formData.is_raw_material && "(Opcional para materia prima)"}</FormLabel>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium pointer-events-none">
                     $
@@ -180,7 +180,7 @@ export function ProductModal({
                 </div>
               </div>
               <div>
-                <FormLabel>Costo</FormLabel>
+                <FormLabel>Costo {formData.is_raw_material && "(Opcional)"}</FormLabel>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium pointer-events-none">
                     $

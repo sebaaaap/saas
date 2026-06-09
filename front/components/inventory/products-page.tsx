@@ -449,13 +449,13 @@ export function ProductsPage() {
                                             {product.product_type === "SERVICE" ? (
                                                 <span className="text-sm font-bold text-muted-foreground">-</span>
                                             ) : (
-                                                <span
-                                                    className={`text-sm font-bold ${product.total_stock <= (product.min_stock ?? 5)
-                                                        ? "text-red-600"
-                                                        : "text-emerald-600"
-                                                        }`}
+                                                <span 
+                                                    className={`text-sm font-bold ${((product as any).available_qty ?? product.total_stock) <= (product.min_stock ?? 5) 
+                                                        ? 'text-red-600' 
+                                                        : 'text-emerald-600'
+                                                    }`}
                                                 >
-                                                    {product.total_stock}
+                                                    {(product as any).available_qty ?? product.total_stock}
                                                 </span>
                                             )}
                                         </div>

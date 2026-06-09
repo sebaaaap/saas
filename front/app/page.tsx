@@ -280,7 +280,10 @@ export default function AppPage() {
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.barcode?.includes(searchQuery)
 
-      return matchesCategory && matchesSearch
+      // EXCLUDE RAW MATERIALS FROM POS
+      const isNotRawMaterial = !p.isRawMaterial
+
+      return matchesCategory && matchesSearch && isNotRawMaterial
     })
 
     return base.map(p => {
