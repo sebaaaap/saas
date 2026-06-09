@@ -111,7 +111,7 @@ export function PurchasesList() {
             ...items,
             {
                 product_id: newItem.product_id,
-                quantity: parseInt(newItem.quantity),
+                quantity: parseFloat(newItem.quantity),
                 unit_cost: parseFloat(newItem.unit_cost),
             },
         ]);
@@ -427,6 +427,8 @@ export function PurchasesList() {
                                             type="number"
                                             className="form-input text-center"
                                             placeholder="Cant."
+                                            step="any"
+                                            min="0"
                                             value={newItem.quantity}
                                             onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
                                         />

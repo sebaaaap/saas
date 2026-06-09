@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Plus, Edit, Trash2, Package, MapPin, ChevronDown, Upload, Loader2, Settings, Coffee } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Package, MapPin, ChevronDown, Upload, Loader2, Settings, Coffee, TrendingDown } from "lucide-react";
 import { ProductModal } from "@/components/shared/product-modal";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
@@ -426,7 +426,7 @@ export function ProductsPage() {
                                                                     <MapPin size={12} className="text-muted-foreground" />
                                                                     <span className="font-mono font-medium">{loc.location_path.split('/').pop()}</span>
                                                                 </div>
-                                                                <Badge variant="secondary" className="h-5 text-[10px]">{loc.stock}</Badge>
+                                                                <Badge variant="secondary" className="h-5 text-[10px] font-mono">{Number.isInteger(loc.stock) ? loc.stock : parseFloat(loc.stock.toFixed(3))}</Badge>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -460,16 +460,48 @@ export function ProductsPage() {
                                         <div className="flex flex-col items-center gap-1">
                                             {product.product_type === "SERVICE" ? (
                                                 <span className="text-sm font-bold text-muted-foreground">-</span>
-                                            ) : (
-                                                <span 
-                                                    className={`text-sm font-bold ${((product as any).available_qty ?? product.total_stock) <= (product.min_stock ?? 5) 
-                                                        ? 'text-red-600' 
-                                                        : 'text-emerald-600'
-                                                    }`}
-                                                >
-                                                    {(product as any).available_qty ?? product.total_stock} {product.uom === 'unidades' ? 'u' : product.uom || 'u'}
-                                                </span>
-                                            )}
+                                            ) : (() => {
+                                                const qty = (product as any).available_qty ?? product.total_stock;
+                                                const minStock = product.min_stock ?? 5;
+                                                const isLow = qty <= minStock;
+                                                // Formatear con hasta 3 decimales significativos
+                                                const formatQty = (n: number) => {
+                                                    if (Number.isInteger(n)) return n.toString();
+                                                    // Hasta 3 decimales, sin ceros finales
+                                                    const fixed3 = parseFloat(n.toFixed(3));
+                                                    return fixed3.toString();
+                                                };
+                                                const uomLabel = product.uom === 'unidades' ? 'u' : product.uom || 'u';
+                                                // Para materia prima (padre), mostrar barra de progreso visual
+                                                const isParent = product.is_raw_material;
+                                                return (
+                                                    <div className="flex flex-col items-center gap-1.5 w-full">
+                                                        <span
+                                                            className={`text-sm font-bold font-mono tabular-nums ${
+                                                                isLow ? 'text-red-600' : 'text-emerald-600'
+                                                            }`}
+                                                        >
+                                                            {formatQty(qty)}
+                                                            <span className="text-[10px] font-normal ml-1 opacity-70">{uomLabel}</span>
+                                                        </span>
+                                                        {isParent && (
+                                                            <div
+                                                                className="w-16 h-1.5 rounded-full bg-muted overflow-hidden border border-border"
+                                                                title={`Stock exacto: ${qty} ${uomLabel}`}
+                                                            >
+                                                                <div
+                                                                    className={`h-full rounded-full transition-all ${
+                                                                        isLow ? 'bg-red-500' : qty < minStock * 2 ? 'bg-amber-400' : 'bg-emerald-500'
+                                                                    }`}
+                                                                    style={{
+                                                                        width: `${Math.min(100, Math.max(2, (qty / (minStock * 3)) * 100))}%`
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </td>
                                     <td className="px-5 py-4 text-right font-bold text-foreground">
