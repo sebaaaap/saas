@@ -14,6 +14,8 @@ export interface Product {
   productType?: string // "SERVICE", "STORABLE"
   isVariableConsumption?: boolean
   defaultConsumptionRate?: number
+  isRawMaterial?: boolean
+  isDerived?: boolean
 }
 
 export interface Category {

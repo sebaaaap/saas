@@ -105,12 +105,21 @@ export function PdvProductGrid({
                   </div>
 
                   {/* Stock Info */}
-                  <span className={`mt-1.5 text-[10px] font-medium ${!isService && product.stock <= (product.stockMin ?? 5) ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                  <span className={`mt-1.5 text-[10px] font-medium flex items-center justify-between w-full ${!isService && product.stock <= (product.stockMin ?? 5) ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                    <span>
                     {isService
                       ? "Servicio"
                       : product.stock > 99
                         ? "99+ en stock"
                         : `${product.stock} en stock`}
+                    </span>
+                    
+                    {product.isDerived && (
+                      <span className="bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider ml-1">Derivado</span>
+                    )}
+                    {product.isRawMaterial && (
+                      <span className="bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider ml-1">Padre</span>
+                    )}
                   </span>
                 </button>
               )

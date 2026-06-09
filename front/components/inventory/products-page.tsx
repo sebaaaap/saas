@@ -31,6 +31,8 @@ interface Product {
     min_stock?: number;
     locations: LocationDetail[];
     location_id?: string;
+    is_raw_material?: boolean;
+    bom_lines?: any[];
 }
 
 interface Location {
@@ -71,6 +73,9 @@ export function ProductsPage() {
         is_variable_consumption: false,
         default_consumption_rate: "1.0",
         min_stock: "5",
+        is_raw_material: false,
+        bom_component_id: "",
+        bom_qty_per_unit: "",
     });
 
     useEffect(() => {
@@ -146,6 +151,9 @@ export function ProductsPage() {
             is_variable_consumption: false,
             default_consumption_rate: "1.0",
             min_stock: "5",
+            is_raw_material: false,
+            bom_component_id: "",
+            bom_qty_per_unit: "",
         });
         setIsModalOpen(true);
     };
@@ -165,6 +173,9 @@ export function ProductsPage() {
             is_variable_consumption: (product as any).is_variable_consumption || false,
             default_consumption_rate: ((product as any).default_consumption_rate || 1.0).toString(),
             min_stock: ((product as any).min_stock ?? 5).toString(),
+            is_raw_material: product.is_raw_material || false,
+            bom_component_id: product.bom_lines && product.bom_lines.length > 0 ? product.bom_lines[0].component_id : "",
+            bom_qty_per_unit: product.bom_lines && product.bom_lines.length > 0 ? product.bom_lines[0].qty_per_unit.toString() : "",
         });
         setIsModalOpen(true);
     };
@@ -193,14 +204,26 @@ export function ProductsPage() {
             is_variable_consumption: !isService && formData.uom !== "unidades",
             default_consumption_rate: parseFloat(formData.default_consumption_rate) || 1.0,
             min_stock: parseFloat(formData.min_stock) || 0,
+            is_raw_material: formData.is_raw_material,
         };
 
         try {
+            let productId = editingId;
             if (editingId) {
                 await api.put(`/products/${editingId}`, payload);
             } else {
-                await api.post(`/products/`, payload);
+                const res = await api.post(`/products/`, payload);
+                productId = res.data?.id;
             }
+
+            // Guardar receta/BOM
+            if (productId && !formData.is_raw_material && formData.bom_component_id) {
+                await api.post(`/products/${productId}/bom`, {
+                    component_id: formData.bom_component_id,
+                    qty_per_unit: parseFloat(formData.bom_qty_per_unit) || 0
+                });
+            }
+
             setIsModalOpen(false);
             alert(editingId ? "Producto Actualizado" : "Producto Creado");
             fetchProducts();
@@ -335,10 +358,18 @@ export function ProductsPage() {
                                     </td>
                                     <td className="px-5 py-4">
                                         <div className="flex flex-col">
-                                            <span className="font-semibold text-foreground text-sm">
-                                                {product.name}
-                                            </span>
-                                            <span className="text-[11px] text-muted-foreground uppercase font-medium">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold text-foreground text-sm">
+                                                    {product.name}
+                                                </span>
+                                                {product.is_raw_material && (
+                                                    <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-widest">PADRE</span>
+                                                )}
+                                                {product.bom_lines && product.bom_lines.length > 0 && (
+                                                    <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded uppercase tracking-widest">DERIVADO</span>
+                                                )}
+                                            </div>
+                                            <span className="text-[11px] text-muted-foreground uppercase font-medium mt-0.5">
                                                 {product.product_type === "SERVICE" ? "Servicio" : product.uom}
                                             </span>
                                         </div>
@@ -479,6 +510,12 @@ export function ProductsPage() {
                 categories={categories}
                 locations={locations}
                 occupiedLocationIds={occupiedLocationIds}
+                allProducts={products.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    uom: p.uom,
+                    is_raw_material: p.is_raw_material || false
+                }))}
             />
         </div>
     );

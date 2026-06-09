@@ -29,6 +29,16 @@ interface ProductFormData {
   is_variable_consumption: boolean;
   default_consumption_rate: string;
   min_stock: string;
+  is_raw_material: boolean;
+  bom_component_id: string;
+  bom_qty_per_unit: string;
+}
+
+interface ProductInfo {
+  id: string;
+  name: string;
+  uom: string;
+  is_raw_material: boolean;
 }
 
 interface ProductModalProps {
@@ -41,6 +51,7 @@ interface ProductModalProps {
   categories: Category[];
   locations: Location[];
   occupiedLocationIds: string[];
+  allProducts: ProductInfo[];
 }
 
 export function ProductModal({
@@ -53,6 +64,7 @@ export function ProductModal({
   categories,
   locations,
   occupiedLocationIds,
+  allProducts,
 }: ProductModalProps) {
   if (!isOpen) return null;
 
@@ -322,6 +334,80 @@ export function ProductModal({
               </div>
               )}
             </FormSection>
+
+            {/* Receta / BOM */}
+            {formData.product_type !== "SERVICE" && (
+              <FormSection title="Receta / Origen (Opcional)">
+                <div className="col-span-1 sm:col-span-2">
+                  <label className="flex items-center gap-2 cursor-pointer w-fit mb-4">
+                    <input
+                      type="checkbox"
+                      className="form-checkbox rounded text-primary border-border focus:ring-primary h-4 w-4"
+                      checked={formData.is_raw_material}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          is_raw_material: e.target.checked,
+                          bom_component_id: "",
+                          bom_qty_per_unit: ""
+                        })
+                      }
+                    />
+                    <span className="text-sm font-semibold text-foreground">
+                      Este producto ES una materia prima o producto padre.
+                    </span>
+                  </label>
+                  
+                  {!formData.is_raw_material && (
+                    <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                      <p className="text-xs text-indigo-700/80 mb-3 font-medium">
+                        Si este producto se descuenta de otro (ej: un parche se descuenta del caucho, o una unidad se descuenta de una caja), configúralo aquí:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <FormLabel>Se descuenta de (Producto Padre)</FormLabel>
+                          <select
+                            className="form-input"
+                            value={formData.bom_component_id}
+                            onChange={(e) =>
+                              setFormData({ ...formData, bom_component_id: e.target.value })
+                            }
+                          >
+                            <option value="">- Selecciona el padre -</option>
+                            {allProducts
+                              .filter(p => p.id !== editingId)
+                              .map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} {p.is_raw_material ? "(Materia Prima)" : ""}
+                                </option>
+                            ))}
+                          </select>
+                        </div>
+                        {formData.bom_component_id && (
+                          <div>
+                            <FormLabel>Cantidad a descontar del padre</FormLabel>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              className="form-input"
+                              placeholder="Ej: 0.05"
+                              value={formData.bom_qty_per_unit}
+                              onChange={(e) =>
+                                setFormData({ ...formData, bom_qty_per_unit: e.target.value })
+                              }
+                            />
+                            <p className="text-[10px] text-indigo-700 mt-1">
+                              Al vender 1 {formData.uom}, se descontará esta cantidad del padre.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </FormSection>
+            )}
           </div>
 
           {/* Footer */}

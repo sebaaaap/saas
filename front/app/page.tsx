@@ -225,14 +225,16 @@ export default function AppPage() {
         cost: toNum((p as any).cost || 0),
         categoryId: catId,
         barcode: p.barcode,
-        stock: toNum((p as any).total_stock || (p as any).stock_quantity || 0),
+        stock: toNum((p as any).available_qty ?? (p as any).total_stock ?? (p as any).stock_quantity ?? 0),
         stockMin: toNum(p.min_stock ?? 5),
         tax: 19,
         color: categoryColor,
         unit: p.uom || "un",
         productType: p.product_type || "STORABLE",
         isVariableConsumption: p.is_variable_consumption || false,
-        defaultConsumptionRate: toNum(p.default_consumption_rate || 1)
+        defaultConsumptionRate: toNum(p.default_consumption_rate || 1),
+        isRawMaterial: p.is_raw_material || false,
+        isDerived: (p as any).bom_lines && (p as any).bom_lines.length > 0
       }
     })
   }, [apiProducts, mappedCategories])
