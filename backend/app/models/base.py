@@ -191,7 +191,8 @@ class Product(TenantModel):
     is_active = Column(Boolean, default=True)
     
     is_raw_material = Column(Boolean, default=False, nullable=False) # New field
-    
+    is_scrap = Column(Boolean, default=False, nullable=False) # Scrap/Leftover tracking
+    scrap_parent_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=True)
     branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True)
     branch = relationship("Branch", back_populates="products")
 

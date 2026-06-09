@@ -353,6 +353,8 @@ class ProductAggregatedResponse(BaseModel):
     min_stock: float = 5.0
     suppliers_info: List[dict] = [] # dict mapping to avoid circular import or just simple dict
     is_raw_material: bool = False
+    is_scrap: bool = False
+    scrap_parent_id: Optional[UUID] = None
     bom_lines: List[BOMLineRead] = []
     available_qty: float = 0.0 # Calculado al vuelo
 
@@ -468,14 +470,15 @@ def list_products(
             
         # El available qty es la suma del stock propio (por ejemplo devoluciones/cajas sueltas) + lo que se puede hacer
         available_qty = float(total_stock) + float(available_from_bom)
+        suppliers_info_list = [{"supplier_id": str(s.supplier_id), "supplier_code": s.supplier_code} for s in primary.suppliers_info]
 
         results.append(ProductAggregatedResponse(
             id=primary.id,
             name=primary.name,
             barcode=primary.barcode,
-            price=primary.price,
-            cost=primary.cost,
-            total_stock=total_stock,
+            price=float(primary.price),
+            cost=float(primary.cost),
+            total_stock=float(total_stock),
             category_id=primary.category_id,
             product_type=str(p_type),
             uom=primary.uom,
@@ -486,8 +489,10 @@ def list_products(
             is_variable_consumption=primary.is_variable_consumption,
             default_consumption_rate=float(primary.default_consumption_rate) if primary.default_consumption_rate is not None else 1.0,
             min_stock=float(primary.min_stock) if primary.min_stock is not None else 5.0,
-            suppliers_info=[{"supplier_id": str(s.supplier_id), "supplier_code": s.supplier_code} for s in primary.suppliers_info],
+            suppliers_info=suppliers_info_list,
             is_raw_material=primary.is_raw_material,
+            is_scrap=primary.is_scrap,
+            scrap_parent_id=primary.scrap_parent_id,
             bom_lines=bom_lines_read,
             available_qty=available_qty
         ))
@@ -704,3 +709,96 @@ def delete_bom_line(
     db.delete(bom)
     db.commit()
     return {"detail": "Componente eliminado de la receta"}
+
+class ScrapTransferRequest(BaseModel):
+    quantity: float
+
+@router.post("/{product_id}/separate-scrap")
+def separate_scrap(
+    product_id: UUID,
+    request: ScrapTransferRequest,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(check_roles(["admin", "inventario", "vendedor"]))
+):
+    """
+    Separa una cantidad de stock de un producto Padre (Materia prima) hacia un producto 'Sobrante'.
+    Si el producto sobrante no existe, lo crea automáticamente.
+    """
+    if request.quantity <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad a separar debe ser mayor a 0")
+        
+    parent = db.tenant_query(Product).filter(Product.id == product_id, Product.is_active == True).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Producto padre no encontrado")
+        
+    if not parent.is_raw_material:
+        raise HTTPException(status_code=400, detail="Solo se pueden separar sobrantes de materias primas")
+        
+    if float(parent.stock_quantity) < request.quantity:
+        raise HTTPException(status_code=400, detail=f"Stock insuficiente. Stock actual: {parent.stock_quantity}")
+        
+    # Buscar el producto sobrante vinculado (o buscar por nombre si no hay id directo)
+    scrap_product = db.tenant_query(Product).filter(
+        Product.scrap_parent_id == parent.id,
+        Product.is_scrap == True
+    ).first()
+    
+    if not scrap_product:
+        # Crear el producto sobrante
+        scrap_product = Product(
+            name=f"Sobrante de {parent.name}",
+            barcode=f"SCRAP-{parent.barcode}",
+            internal_reference=f"SCRAP-{parent.internal_reference}" if parent.internal_reference else None,
+            price=0,
+            cost=parent.cost,
+            uom=parent.uom,
+            stock_quantity=0,
+            product_type=parent.product_type,
+            category_id=parent.category_id,
+            category=parent.category,
+            location_id=parent.location_id,
+            branch_id=parent.branch_id,
+            is_raw_material=False,
+            is_scrap=True,
+            scrap_parent_id=parent.id,
+            is_active=True
+        )
+        db.add(scrap_product)
+        db.flush()
+        
+    # Restar al padre y sumar al sobrante
+    parent.stock_quantity = float(parent.stock_quantity) - request.quantity
+    scrap_product.stock_quantity = float(scrap_product.stock_quantity) + request.quantity
+    
+    # Registrar el movimiento de inventario para trazabilidad
+    user_id_str = str(getattr(current_user, "id", None) or getattr(current_user, "username", "admin"))
+    
+    movement = InventoryMovement(
+        type=MovementType.INTERNAL_TRANSFER,
+        reason=f"Separación de sobrante manual",
+        user_id=user_id_str
+    )
+    db.add(movement)
+    db.flush()
+    
+    # Salida del padre
+    db.add(InventoryMovementItem(
+        movement_id=movement.id,
+        product_id=parent.id,
+        quantity=request.quantity,
+        stock_before=float(parent.stock_quantity) + request.quantity,
+        stock_after=float(parent.stock_quantity)
+    ))
+    
+    # Entrada al sobrante
+    db.add(InventoryMovementItem(
+        movement_id=movement.id,
+        product_id=scrap_product.id,
+        quantity=request.quantity,
+        stock_before=float(scrap_product.stock_quantity) - request.quantity,
+        stock_after=float(scrap_product.stock_quantity)
+    ))
+    
+    db.commit()
+    
+    return {"detail": "Sobrante separado exitosamente", "parent_stock": float(parent.stock_quantity), "scrap_stock": float(scrap_product.stock_quantity)}

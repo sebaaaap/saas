@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Plus, Edit, Trash2, Package, MapPin, ChevronDown, Upload, Loader2, Settings, Coffee, TrendingDown } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Package, MapPin, ChevronDown, Upload, Loader2, Settings, Coffee, TrendingDown, Scissors } from "lucide-react";
 import { ProductModal } from "@/components/shared/product-modal";
+import { SeparateScrapModal } from "./separate-scrap-modal";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ interface Product {
     locations: LocationDetail[];
     location_id?: string;
     is_raw_material?: boolean;
+    is_scrap?: boolean;
+    scrap_parent_id?: string;
     bom_lines?: any[];
 }
 
@@ -55,6 +58,7 @@ export function ProductsPage() {
     const [locations, setLocations] = useState<Location[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [scrapModalProduct, setScrapModalProduct] = useState<Product | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -272,13 +276,34 @@ export function ProductsPage() {
         }
     };
 
-    const filteredProducts = products.filter(
+    const filteredProductsRaw = products.filter(
         (p) =>
             p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.barcode.includes(searchTerm) ||
             (p.internal_reference &&
                 p.internal_reference.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+
+    // Group scrap products under their parents
+    const groupedFilteredProducts = (() => {
+        const result: Product[] = [];
+        const mainProducts = filteredProductsRaw.filter(p => !p.is_scrap);
+        const scrapProducts = filteredProductsRaw.filter(p => p.is_scrap);
+        
+        mainProducts.forEach(parent => {
+            result.push(parent);
+            // Find its children
+            const children = scrapProducts.filter(s => s.scrap_parent_id === parent.id);
+            result.push(...children);
+        });
+
+        // Add any orphaned scrap products (e.g. parent not matching search but child did)
+        const addedScrapIds = new Set(result.filter(p => p.is_scrap).map(p => p.id));
+        const orphanScraps = scrapProducts.filter(s => !addedScrapIds.has(s.id));
+        result.push(...orphanScraps);
+
+        return result;
+    })();
 
     // Obtener IDs de ubicaciones ocupadas por OTROS productos (diferentes al que editamos)
     const currentBarcode = products.find(p => p.id === editingId)?.barcode;
@@ -354,10 +379,10 @@ export function ProductsPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredProducts.map((product) => (
+                            {groupedFilteredProducts.map((product) => (
                                 <tr
                                     key={product.id}
-                                    className="group border-b border-border/50 last:border-b-0 hover:bg-muted/40 transition-colors"
+                                    className={`group border-b border-border/50 last:border-b-0 hover:bg-muted/40 transition-colors ${product.is_scrap ? 'bg-muted/10 opacity-80' : ''}`}
                                 >
                                     <td className="px-5 py-4 text-center">
                                         <div className="w-9 h-9 bg-muted rounded-xl flex items-center justify-center text-base group-hover:bg-card transition-colors">
@@ -368,7 +393,10 @@ export function ProductsPage() {
                                                     : <Package size={18} className="text-muted-foreground" />}
                                         </div>
                                     </td>
-                                    <td className="px-5 py-4">
+                                    <td className={`px-5 py-4 ${product.is_scrap ? 'pl-12 relative' : ''}`}>
+                                        {product.is_scrap && (
+                                            <div className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-[1px] bg-border border-l border-b rounded-bl" />
+                                        )}
                                         <div className="flex flex-col">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-semibold text-foreground text-sm">
@@ -376,6 +404,9 @@ export function ProductsPage() {
                                                 </span>
                                                 {product.is_raw_material && (
                                                     <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-widest">PADRE</span>
+                                                )}
+                                                {product.is_scrap && (
+                                                    <span className="text-[9px] font-bold bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded uppercase tracking-widest">SOBRANTE</span>
                                                 )}
                                                 {product.bom_lines && product.bom_lines.length > 0 && (
                                                     <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded uppercase tracking-widest">DERIVADO</span>
@@ -511,6 +542,15 @@ export function ProductsPage() {
                                     </td>
                                     <td className="px-5 py-4 text-center">
                                         <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {product.is_raw_material && (
+                                                <button
+                                                    onClick={() => setScrapModalProduct(product)}
+                                                    className="p-2 text-muted-foreground hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
+                                                    title="Separar Sobrante"
+                                                >
+                                                    <Scissors size={15} />
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => openEditModal(product)}
                                                 className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-xl transition-all"
@@ -533,7 +573,7 @@ export function ProductsPage() {
                     </table>
                 </div>
 
-                {filteredProducts.length === 0 && (
+                {groupedFilteredProducts.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
                         <Package size={56} strokeWidth={1} className="mb-4 opacity-40" />
                         <p className="text-lg font-medium">
@@ -562,6 +602,14 @@ export function ProductsPage() {
                     uom: p.uom,
                     is_raw_material: p.is_raw_material || false
                 }))}
+            />
+            <SeparateScrapModal
+                isOpen={!!scrapModalProduct}
+                onClose={() => setScrapModalProduct(null)}
+                product={scrapModalProduct}
+                onSuccess={() => {
+                    fetchProducts();
+                }}
             />
         </div>
     );

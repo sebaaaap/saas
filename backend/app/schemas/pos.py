@@ -40,6 +40,8 @@ class ProductBase(BaseModel):
     uom: str = "unidades"
     is_variable_consumption: bool = False
     default_consumption_rate: Decimal = Field(default=Decimal('1.0'), description="Tasa de consumo sugerida")
+    is_scrap: bool = False
+    scrap_parent_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True
