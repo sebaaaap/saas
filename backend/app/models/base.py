@@ -190,6 +190,8 @@ class Product(TenantModel):
     image_path = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     
+    is_raw_material = Column(Boolean, default=False, nullable=False) # New field
+    
     branch_id = Column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True)
     branch = relationship("Branch", back_populates="products")
 
@@ -199,6 +201,28 @@ class Product(TenantModel):
     sale_items = relationship("SaleItem", back_populates="product")
     purchase_items = relationship("PurchaseItem", back_populates="product")
     suppliers_info = relationship("ProductSupplier", back_populates="product", cascade="all, delete-orphan")
+    
+    # BOM relationships
+    bom_lines = relationship("ProductBOM", foreign_keys="ProductBOM.product_id", back_populates="product", cascade="all, delete-orphan")
+    used_in_bom = relationship("ProductBOM", foreign_keys="ProductBOM.component_id", back_populates="component")
+
+class ProductBOM(TenantModel):
+    __tablename__ = "product_bom"
+    
+    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False, index=True)
+    component_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False, index=True)
+    
+    qty_per_unit = Column(Numeric(12, 4), nullable=False) # e.g. 0.005
+    component_uom = Column(String, nullable=False) # "kg", "unidades", etc
+    
+    is_active = Column(Boolean, default=True)
+    
+    product = relationship("Product", foreign_keys=[product_id], back_populates="bom_lines")
+    component = relationship("Product", foreign_keys=[component_id], back_populates="used_in_bom")
+
+    __table_args__ = (
+        UniqueConstraint('product_id', 'component_id', 'company_id', name='uix_product_component_company'),
+    )
 
 class CashRegister(TenantModel):
     __tablename__ = "cash_registers"

@@ -107,8 +107,11 @@ class POSService:
 
                 final_items_to_create = []
 
+                from sqlalchemy.orm import joinedload
                 for item in sale_data.items:
-                    original_product = db.tenant_query(Product).filter(Product.id == item.product_id).first()
+                    original_product = db.tenant_query(Product).options(
+                        joinedload(Product.bom_lines).joinedload(ProductBOM.component)
+                    ).filter(Product.id == item.product_id).first()
                     if not original_product:
                         raise HTTPException(status_code=404, detail=f"Producto {item.product_id} no encontrado")
 
@@ -135,21 +138,14 @@ class POSService:
 
                     total_available = sum(p.stock_quantity for p in candidates)
 
-                    if total_available < stock_to_deduct:
-                        raise HTTPException(
-                            status_code=400, 
-                            detail=f"Stock insuficiente para {original_product.name}. Total disponible: {total_available}, Requerido: {stock_to_deduct}"
-                        )
-
                     qty_remaining = stock_to_deduct
-
+                    
+                    # 1. Try to take from own stock
                     for candidate in candidates:
                         if qty_remaining <= 0:
                             break
-
                         take = min(Decimal(str(candidate.stock_quantity)), Decimal(str(qty_remaining)))
                         
-                        # Descuento en la base de datos
                         stock_before = candidate.stock_quantity
                         candidate.stock_quantity -= take
                         stock_after = candidate.stock_quantity
@@ -173,6 +169,66 @@ class POSService:
                         })
 
                         qty_remaining -= take
+                        
+                    # 2. If still remaining, check BOM
+                    if qty_remaining > 0:
+                        has_active_bom = any(b.is_active for b in original_product.bom_lines)
+                        if not has_active_bom:
+                            raise HTTPException(
+                                status_code=400, 
+                                detail=f"Stock insuficiente para {original_product.name}. Total disponible: {total_available}, Requerido: {stock_to_deduct}"
+                            )
+                            
+                        # Use the first active BOM line
+                        bom = next(b for b in original_product.bom_lines if b.is_active)
+                        component_qty_needed = qty_remaining * Decimal(str(bom.qty_per_unit))
+                        
+                        comp_candidates = db.tenant_query(Product).outerjoin(Product.location).filter(
+                            Product.barcode == bom.component.barcode,
+                            Product.stock_quantity > 0,
+                            or_(StorageLocation.id == None, StorageLocation.name != "Pasillo Mermas")
+                        ).with_for_update(of=Product).order_by(Product.stock_quantity.desc()).all()
+                        
+                        comp_total_available = sum(p.stock_quantity for p in comp_candidates)
+                        if comp_total_available < component_qty_needed:
+                            raise HTTPException(
+                                status_code=400, 
+                                detail=f"Stock insuficiente en la materia prima '{bom.component.name}' para fabricar '{original_product.name}'. Disponible: {comp_total_available}, Requerido: {component_qty_needed}"
+                            )
+                            
+                        comp_qty_remaining = component_qty_needed
+                        
+                        for comp_candidate in comp_candidates:
+                            if comp_qty_remaining <= 0:
+                                break
+                            
+                            take_comp = min(Decimal(str(comp_candidate.stock_quantity)), comp_qty_remaining)
+                            
+                            stock_before = comp_candidate.stock_quantity
+                            comp_candidate.stock_quantity -= take_comp
+                            stock_after = comp_candidate.stock_quantity
+                            
+                            mov_item = InventoryMovementItem(
+                                movement_id=movement.id,
+                                product_id=comp_candidate.id,
+                                quantity=-take_comp,
+                                stock_before=stock_before,
+                                stock_after=stock_after
+                            )
+                            db.add(mov_item)
+                            comp_qty_remaining -= take_comp
+                            
+                        # Add the sale item pointing to the ORIGINAL product, but it consumed component stock.
+                        # The stock_reduced is recorded as the remaining qty of the derivative product,
+                        # not the component quantity, so refunds know how many "parches" to return.
+                        final_items_to_create.append({
+                            "product_id": original_product.id,
+                            "quantity": qty_remaining / item_consumption_rate if item_consumption_rate else Decimal('0'),
+                            "price": Decimal(str(item.price)),
+                            "discount_percent": Decimal(str(item.discount_percent)) if item.discount_percent else Decimal('0'),
+                            "consumption_rate": item_consumption_rate,
+                            "stock_reduced": qty_remaining
+                        })
 
                 subtotal, tax_amount, total = POSService.calculate_totals(sale_data.items)
                 total_payments = sum(Decimal(str(p.amount)) for p in sale_data.payments)
@@ -407,34 +463,50 @@ class POSService:
         
         # Registrar items del movimiento Y actualizar stock en tiempo real
         for item in refund_data.items:
-            product = db.tenant_query(Product).filter(Product.id == item.product_id).first()
-            if product:
-                if product.product_type == ProductType.SERVICE:
-                    continue
-                
-                stock_before = product.stock_quantity
+                from sqlalchemy.orm import joinedload
+                from app.models.base import ProductBOM
+                product = db.tenant_query(Product).options(
+                    joinedload(Product.bom_lines).joinedload(ProductBOM.component)
+                ).filter(Product.id == item.product_id).first()
+                if product:
+                    if product.product_type == ProductType.SERVICE:
+                        continue
+                    
+                    stock_before = product.stock_quantity
 
-                # Obtenemos la tasa de la venta original para devolver exacto el stock
-                original_sale_item = db.tenant_query(SaleItem).filter(
-                    SaleItem.ticket_id == original_ticket.id,
-                    SaleItem.product_id == product.id
-                ).first()
-                applied_rate = original_sale_item.consumption_rate if original_sale_item else Decimal('1.0')
-                total_to_return = item.quantity * applied_rate
+                    # Obtenemos la tasa de la venta original para devolver exacto el stock
+                    original_sale_item = db.tenant_query(SaleItem).filter(
+                        SaleItem.ticket_id == original_ticket.id,
+                        SaleItem.product_id == product.id
+                    ).first()
+                    applied_rate = original_sale_item.consumption_rate if original_sale_item else Decimal('1.0')
+                    total_to_return = item.quantity * applied_rate
+                    
+                    # ── CHECK BOM ────────────────────────────────────────────────
+                    # Si el producto tiene receta activa, devolvemos stock a la materia prima en su lugar.
+                    target_product = product
+                    target_quantity = total_to_return
+                    has_active_bom = any(b.is_active for b in product.bom_lines)
+                    
+                    if has_active_bom:
+                        bom = next(b for b in product.bom_lines if b.is_active)
+                        target_product = bom.component
+                        target_quantity = total_to_return * Decimal(str(bom.qty_per_unit))
+                        stock_before = target_product.stock_quantity
 
-                if refund_data.return_to_stock:
-                    # ── REINGRESO AL STOCK ───────────────────────────────────────
-                    # Sumamos la cantidad devuelta al producto original
-                    product.stock_quantity += total_to_return
-                    stock_after = product.stock_quantity
+                    if refund_data.return_to_stock:
+                        # ── REINGRESO AL STOCK ───────────────────────────────────────
+                        # Sumamos la cantidad devuelta al producto destino
+                        target_product.stock_quantity += target_quantity
+                        stock_after = target_product.stock_quantity
 
-                    movement_item = InventoryMovementItem(
-                        movement_id=movement.id,
-                        product_id=product.id,
-                        quantity=total_to_return,         # positivo = entra al stock
-                        stock_before=stock_before,
-                        stock_after=stock_after
-                    )
+                        movement_item = InventoryMovementItem(
+                            movement_id=movement.id,
+                            product_id=target_product.id,
+                            quantity=target_quantity,         # positivo = entra al stock
+                            stock_before=stock_before,
+                            stock_after=stock_after
+                        )
                 else:
                     # ── MERMA (no regresa al stock útil) ────────────────────────
                     # Buscamos o creamos el Pasillo Mermas
@@ -453,22 +525,22 @@ class POSService:
                         db.add(merma_location)
                         db.flush()
 
-                    # Buscamos si ya hay un "twin" del producto en merma
+                    # Buscamos si ya hay un "twin" del producto destino en merma
                     merma_product = db.tenant_query(Product).filter(
-                        Product.barcode == product.barcode,
+                        Product.barcode == target_product.barcode,
                         Product.location_id == merma_location.id
                     ).first()
 
                     if not merma_product:
                         # Creamos gemelo en Pasillo Mermas con stock inicial 0
                         merma_product = Product(
-                            name=product.name,
-                            barcode=product.barcode,
-                            price=product.price,
-                            cost=product.cost,
-                            uom=product.uom,
-                            product_type=product.product_type,
-                            category_id=product.category_id,
+                            name=target_product.name,
+                            barcode=target_product.barcode,
+                            price=target_product.price,
+                            cost=target_product.cost,
+                            uom=target_product.uom,
+                            product_type=target_product.product_type,
+                            category_id=target_product.category_id,
                             location_id=merma_location.id,
                             stock_quantity=0,
                             is_active=True,
@@ -477,15 +549,14 @@ class POSService:
                         db.add(merma_product)
                         db.flush()
 
-                    # Movemos al Pasillo Mermas (stock_quantity del original NO cambia
-                    # porque ya fue descontado al vender, solo registramos el destino)
-                    merma_product.stock_quantity += total_to_return
-                    stock_after = stock_before  # El stock original no cambia en merma
+                    # Movemos al Pasillo Mermas
+                    merma_product.stock_quantity += target_quantity
+                    stock_after = stock_before  # El stock útil original no cambia al enviar a merma
 
                     movement_item = InventoryMovementItem(
                         movement_id=movement.id,
-                        product_id=product.id,
-                        quantity=-total_to_return,         # negativo = sale como merma
+                        product_id=target_product.id,
+                        quantity=-target_quantity,         # negativo = sale como merma (conceptualmente)
                         stock_before=stock_before,
                         stock_after=stock_after
                     )

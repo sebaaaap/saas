@@ -30,6 +30,20 @@ class ProductCreate(BaseModel):
     default_consumption_rate: float = 1.0
     supplier_id: Optional[UUID] = None
     supplier_code: Optional[str] = None
+    is_raw_material: bool = False
+
+class BOMLineCreate(BaseModel):
+    component_id: UUID
+    qty_per_unit: float
+    component_uom: str
+
+class BOMLineRead(BOMLineCreate):
+    id: UUID
+    product_id: UUID
+    component_name: str
+    
+    class Config:
+        from_attributes = True
 
 import pandas as pd
 import io
@@ -189,7 +203,8 @@ async def import_products(
                     category_id=cat_obj.id if cat_obj else None,
                     category=category_name if cat_obj else None,
                     location_id=loc_obj.id if loc_obj else None,
-                    branch_id=branch_id
+                    branch_id=branch_id,
+                    is_raw_material=False
                 )
                 db.add(product)
                 db.flush()
@@ -333,6 +348,9 @@ class ProductAggregatedResponse(BaseModel):
     default_consumption_rate: float = 1.0
     min_stock: float = 5.0
     suppliers_info: List[dict] = [] # dict mapping to avoid circular import or just simple dict
+    is_raw_material: bool = False
+    bom_lines: List[BOMLineRead] = []
+    available_qty: float = 0.0 # Calculado al vuelo
 
 @router.get("/", response_model=List[ProductAggregatedResponse])
 def list_products(
@@ -356,7 +374,11 @@ def list_products(
             (Product.internal_reference.ilike(f"%{q}%"))
         )
         
-    products = query.options(joinedload(Product.location), joinedload(Product.suppliers_info)).all()
+    products = query.options(
+        joinedload(Product.location), 
+        joinedload(Product.suppliers_info),
+        joinedload(Product.bom_lines).joinedload(ProductBOM.component)
+    ).all()
     
     grouped = defaultdict(list)
     for p in products:
@@ -398,6 +420,42 @@ def list_products(
         elif hasattr(p_type, "value"): # Fallback
             p_type = p_type.value
             
+        bom_lines_read = []
+        available_from_bom = float("inf")
+        has_bom = len(primary.bom_lines) > 0
+        
+        for bom in primary.bom_lines:
+            if bom.is_active:
+                bom_lines_read.append(BOMLineRead(
+                    id=bom.id,
+                    product_id=bom.product_id,
+                    component_id=bom.component_id,
+                    qty_per_unit=float(bom.qty_per_unit),
+                    component_uom=bom.component_uom,
+                    component_name=bom.component.name if bom.component else "?"
+                ))
+                
+                # Calcular cuanto se puede fabricar con el stock actual del componente (en la misma branch)
+                # Buscamos el stock total del componente en la base
+                if bom.component:
+                    comp_stock = float(bom.component.stock_quantity or 0)
+                    qty_per = float(bom.qty_per_unit or 1)
+                    if qty_per > 0:
+                        can_make = comp_stock / qty_per
+                        available_from_bom = min(available_from_bom, can_make)
+                    else:
+                        available_from_bom = 0
+                else:
+                    available_from_bom = 0
+                    
+        if not has_bom:
+            available_from_bom = 0.0
+        elif available_from_bom == float("inf"):
+            available_from_bom = 0.0
+            
+        # El available qty es la suma del stock propio (por ejemplo devoluciones/cajas sueltas) + lo que se puede hacer
+        available_qty = float(total_stock) + int(available_from_bom)
+
         results.append(ProductAggregatedResponse(
             id=primary.id,
             name=primary.name,
@@ -415,7 +473,10 @@ def list_products(
             is_variable_consumption=primary.is_variable_consumption,
             default_consumption_rate=float(primary.default_consumption_rate) if primary.default_consumption_rate is not None else 1.0,
             min_stock=float(primary.min_stock) if primary.min_stock is not None else 5.0,
-            suppliers_info=[{"supplier_id": str(s.supplier_id), "supplier_code": s.supplier_code} for s in primary.suppliers_info]
+            suppliers_info=[{"supplier_id": str(s.supplier_id), "supplier_code": s.supplier_code} for s in primary.suppliers_info],
+            is_raw_material=primary.is_raw_material,
+            bom_lines=bom_lines_read,
+            available_qty=available_qty
         ))
     
     return results
@@ -448,7 +509,7 @@ def update_product(
     shared_fields = {
         'name', 'price', 'cost', 'category_id', 'product_type', 
         'uom', 'internal_reference', 'image_path', 'min_stock', 'barcode',
-        'is_variable_consumption', 'default_consumption_rate'
+        'is_variable_consumption', 'default_consumption_rate', 'is_raw_material'
     }
 
     try:
@@ -533,3 +594,100 @@ def delete_product(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"No se puede desactivar el producto: {str(e)}")
+
+# --- Nuevas rutas para BOM ---
+
+@router.get("/{product_id}/bom", response_model=List[BOMLineRead])
+def get_bom(
+    product_id: UUID,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(check_roles(["admin", "inventario", "vendedor"]))
+):
+    from app.models.base import ProductBOM
+    bom_lines = db.tenant_query(ProductBOM).options(joinedload(ProductBOM.component)).filter(
+        ProductBOM.product_id == product_id,
+        ProductBOM.is_active == True
+    ).all()
+    
+    results = []
+    for bom in bom_lines:
+        results.append(BOMLineRead(
+            id=bom.id,
+            product_id=bom.product_id,
+            component_id=bom.component_id,
+            qty_per_unit=float(bom.qty_per_unit),
+            component_uom=bom.component_uom,
+            component_name=bom.component.name if bom.component else "?"
+        ))
+    return results
+
+@router.post("/{product_id}/bom", response_model=BOMLineRead)
+def add_bom_line(
+    product_id: UUID,
+    line: BOMLineCreate,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(check_roles(["admin", "inventario"]))
+):
+    from app.models.base import ProductBOM, Product
+    product = db.tenant_query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Producto padre no encontrado")
+        
+    component = db.tenant_query(Product).filter(Product.id == line.component_id).first()
+    if not component:
+        raise HTTPException(status_code=404, detail="Componente no encontrado")
+        
+    if product_id == line.component_id:
+        raise HTTPException(status_code=400, detail="Un producto no puede ser componente de sí mismo")
+        
+    # Check si ya existe (evitar duplicados, mejor actualizar si existe)
+    existing = db.tenant_query(ProductBOM).filter(
+        ProductBOM.product_id == product_id,
+        ProductBOM.component_id == line.component_id
+    ).first()
+    
+    if existing:
+        existing.qty_per_unit = line.qty_per_unit
+        existing.component_uom = line.component_uom
+        existing.is_active = True
+        db.commit()
+        db.refresh(existing)
+        bom = existing
+    else:
+        bom = ProductBOM(
+            product_id=product_id,
+            component_id=line.component_id,
+            qty_per_unit=line.qty_per_unit,
+            component_uom=line.component_uom
+        )
+        db.add(bom)
+        db.commit()
+        db.refresh(bom)
+        
+    return BOMLineRead(
+        id=bom.id,
+        product_id=bom.product_id,
+        component_id=bom.component_id,
+        qty_per_unit=float(bom.qty_per_unit),
+        component_uom=bom.component_uom,
+        component_name=component.name
+    )
+
+@router.delete("/{product_id}/bom/{bom_id}")
+def delete_bom_line(
+    product_id: UUID,
+    bom_id: UUID,
+    db: TenantSession = Depends(get_tenant_session),
+    current_user = Depends(check_roles(["admin", "inventario"]))
+):
+    from app.models.base import ProductBOM
+    bom = db.tenant_query(ProductBOM).filter(
+        ProductBOM.id == bom_id,
+        ProductBOM.product_id == product_id
+    ).first()
+    if not bom:
+        raise HTTPException(status_code=404, detail="Línea BOM no encontrada")
+        
+    db.delete(bom)
+    db.commit()
+    return {"detail": "Componente eliminado de la receta"}

@@ -338,7 +338,11 @@ class InventoryService:
             # ── Buscar producto en origen ────────────────────────────────────────
             # Usamos _db con filtro explícito de company_id para poder cruzar
             # sucursales dentro de la misma empresa sin violar el aislamiento.
-            source_p = self.db._db.query(Product).filter(
+            from sqlalchemy.orm import joinedload
+            from app.models.base import ProductBOM
+            source_p = self.db._db.query(Product).options(
+                joinedload(Product.bom_lines)
+            ).filter(
                 Product.id == item_req.product_id,
                 Product.branch_id == data.from_branch_id,
                 Product.company_id == company_id,
@@ -355,6 +359,12 @@ class InventoryService:
             from decimal import Decimal
             current_stock = Decimal(str(source_p.stock_quantity or 0))
             if current_stock < item_req.quantity:
+                has_active_bom = any(b.is_active for b in source_p.bom_lines)
+                if has_active_bom:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Stock físico insuficiente para '{source_p.name}'. Al ser un producto derivado (tiene receta), no se puede trasladar su stock virtual. Debes trasladar su materia prima/producto padre directamente."
+                    )
                 raise HTTPException(
                     status_code=400,
                     detail=f"Stock insuficiente para '{source_p.name}'. "
