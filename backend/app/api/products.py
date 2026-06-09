@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Header
 from sqlalchemy.orm import Session
 from app.database import get_db_session
 from app.services.image_service import ImageService
-from app.models.base import Product, StorageLocation
+from app.models.base import Product, StorageLocation, ProductBOM
 from app.schemas.locations import ProductResponseWithLocation
 from pydantic import BaseModel
 from typing import List, Optional
