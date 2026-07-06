@@ -34,11 +34,27 @@ if "*" in env_origins or not env_origins:
 else:
     origins = list(set(env_origins + ALWAYS_ALLOWED_ORIGINS))
 
-print(f"[CORS] Allowed origins: {origins}")
+# Convert wildcards like "https://*.vercel.app" to regex for Starlette CORSMiddleware
+clean_origins = []
+origin_regex_list = []
+for origin in origins:
+    if "*" in origin and origin != "*":
+        import re
+        regex = "^" + re.escape(origin).replace(r"\*", ".*") + "$"
+        origin_regex_list.append(regex)
+    else:
+        clean_origins.append(origin)
+
+allow_origin_regex = "|".join(origin_regex_list) if origin_regex_list else None
+
+print(f"[CORS] Allowed origins: {clean_origins}")
+if allow_origin_regex:
+    print(f"[CORS] Allowed origin regex: {allow_origin_regex}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=clean_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
